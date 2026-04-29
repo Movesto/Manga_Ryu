@@ -7,7 +7,7 @@ import sync
 import auth
 import bookmarks
 import editors_choice
-from routes import home, catalog, manga as manga_routes
+from routes import home, catalog, manga as manga_routes, download as download_routes
 
 app = FastAPI(title="MangaReader API")
 _scheduler = BackgroundScheduler()
@@ -20,6 +20,7 @@ app.include_router(editors_choice.router)
 app.include_router(home.router)
 app.include_router(catalog.router)
 app.include_router(manga_routes.router)
+app.include_router(download_routes.router)
 
 # ── Startup / shutdown ────────────────────────────────────────────────────────
 
@@ -31,8 +32,13 @@ def on_startup():
     auth.ensure_first_admin()
     bookmarks.create_bookmark_tables()
     editors_choice.create_table()
-    threading.Thread(target=sync.run_sync, daemon=True).start()
-    _scheduler.add_job(sync.run_sync, "interval", minutes=30, id="sync")
+    with database.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM manga")
+            manga_count = cur.fetchone()[0]
+    if manga_count == 0:
+        threading.Thread(target=sync.run_sync, daemon=True).start()
+    _scheduler.add_job(sync.run_sync, "interval", hours=6, id="sync")
     _scheduler.start()
 
 

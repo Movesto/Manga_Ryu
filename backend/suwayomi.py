@@ -10,7 +10,7 @@ def safe_fetch(endpoint):
     """
     url = f"{BASE_URL}/{endpoint}"
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         
         # Check if the response is actually JSON before parsing
         if "application/json" in response.headers.get("Content-Type", ""):

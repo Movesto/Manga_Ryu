@@ -7,6 +7,7 @@ from fastapi import APIRouter
 import suwayomi
 import sync
 import database
+from auth import AdminUser
 
 router = APIRouter(tags=["manga"])
 
@@ -51,7 +52,7 @@ def get_pages(manga_id: str, chapter_id: str):
 
 
 @router.post("/api/sync")
-def trigger_sync():
+def trigger_sync(_: AdminUser):
     import threading
     if sync._running:
         return {"status": "already_running"}

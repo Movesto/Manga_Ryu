@@ -2,26 +2,62 @@
 JWT-based authentication.
 Routes are mounted at /api/auth/* via the router included in main.py.
 """
+import logging
 import os
 import secrets
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 from typing import Annotated
 
 import bcrypt as _bcrypt
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
 
 import database
 
+logger = logging.getLogger(__name__)
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
-SECRET_KEY     = os.getenv("JWT_SECRET", secrets.token_hex(32))
+_raw_secret = os.getenv("JWT_SECRET")
+if not _raw_secret:
+    _raw_secret = secrets.token_hex(32)
+    logger.warning(
+        "JWT_SECRET env var is not set — using a random secret. "
+        "All sessions will be invalidated on restart. "
+        "Set JWT_SECRET in your environment to persist sessions."
+    )
+SECRET_KEY     = _raw_secret
 ALGORITHM      = "HS256"
 ACCESS_EXPIRE  = int(os.getenv("ACCESS_TOKEN_MINUTES", "10080"))  # minutes (7 days default)
 REFRESH_EXPIRE = int(os.getenv("REFRESH_TOKEN_DAYS",   "30"))    # days
+
+# ── Rate limiter ──────────────────────────────────────────────────────────────
+
+class _RateLimiter:
+    """Simple sliding-window in-memory rate limiter."""
+    def __init__(self, max_calls: int, window_s: float):
+        self._max    = max_calls
+        self._window = window_s
+        self._log: dict[str, list[float]] = defaultdict(list)
+
+    def check(self, key: str) -> bool:
+        now  = monotonic()
+        seen = self._log[key]
+        # Evict timestamps outside the window
+        self._log[key] = [t for t in seen if now - t < self._window]
+        if len(self._log[key]) >= self._max:
+            return False
+        self._log[key].append(now)
+        return True
+
+# 10 attempts per IP per minute on login/register
+_login_limiter    = _RateLimiter(max_calls=10, window_s=60)
+_register_limiter = _RateLimiter(max_calls=5,  window_s=60)
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -169,7 +205,10 @@ AdminUser = Annotated[dict, Depends(get_admin_user)]
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=TokenOut, status_code=201)
-def register(body: RegisterBody):
+def register(body: RegisterBody, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    if not _register_limiter.check(ip):
+        raise HTTPException(429, "Too many registration attempts. Try again later.")
     if len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     if len(body.username) < 2:
@@ -198,7 +237,10 @@ def register(body: RegisterBody):
 
 
 @router.post("/login", response_model=TokenOut)
-def login(form: OAuth2PasswordRequestForm = Depends()):
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
+    ip = request.client.host if request.client else "unknown"
+    if not _login_limiter.check(ip):
+        raise HTTPException(429, "Too many login attempts. Try again in a minute.")
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
