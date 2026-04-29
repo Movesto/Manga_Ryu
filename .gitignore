@@ -1,0 +1,48 @@
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+.pytest_cache/
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/build/
+frontend/dist/
+frontend/.cache/
+.cache/
+
+# ── Infrastructure / data ─────────────────────────────────────────────────────
+infrastructure/suwayomi-data/
+infrastructure/postgres-data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── OS & editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Claude session data ───────────────────────────────────────────────────────
+.claude/
+
+# ── Loose screenshots / assets committed by accident ─────────────────────────
+*.png
+*.jpg
+*.jpeg
+!public/**
+!frontend/public/**
