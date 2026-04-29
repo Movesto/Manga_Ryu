@@ -1,7 +1,10 @@
 """
 Home-page section endpoints: popular, latest, completed, new releases.
-Reads from PostgreSQL (populated by the sync job) — fast even on cold start.
+- Reads from PostgreSQL for speed; uses Suwayomi chapter dates for Latest.
+- All sections deduplicate by title so the same manga never appears twice.
+- Only English-only sources with working thumbnails and chapters are served.
 """
+import requests
 from fastapi import APIRouter
 
 import cache
@@ -9,8 +12,22 @@ import database
 
 router = APIRouter(tags=["home"])
 
-_COLS = ["id", "title", "thumbnailUrl", "status", "sourceName",
-         "sourceId", "inferredType", "chapterCount"]
+# English-only source IDs with working thumbnails and chapters.
+_GOOD_SOURCES = (
+    "6247824327199706550",  # Asura Scans
+    "3406901199711327034",  # Kayn Scans
+    "2900023289777642714",  # Manga Demon
+    "2499283573021220255",  # MangaDex EN
+    "1201694572804778862",  # Mangafreak
+    "5075089422240578347",  # ManhuaPlus (Unoriginal)
+    "5806040666300479660",  # QiScans
+    "368848319592333339",   # Top Manhua
+    "4972933717624256217",  # Comick EN
+)
+_GOOD_SET = set(_GOOD_SOURCES)
+
+GQL = "http://127.0.0.1:4567/api/graphql"
+
 
 def _rows_to_manga(rows) -> list[dict]:
     return [
@@ -35,18 +52,51 @@ def _query(sql: str, params=()) -> list[dict]:
             return _rows_to_manga(cur.fetchall())
 
 
+def _recent_manga_ids(fetch: int = 120) -> list[int]:
+    """
+    Ask Suwayomi for manga whose chapters were most recently uploaded.
+    Returns manga IDs ordered newest-first, deduplicated, from good sources only.
+    """
+    try:
+        resp = requests.post(
+            GQL,
+            json={"query": f"""{{
+                chapters(orderBy: UPLOAD_DATE, orderByType: DESC, first: {fetch}) {{
+                    nodes {{ mangaId manga {{ sourceId }} }}
+                }}
+            }}"""},
+            timeout=5,
+        )
+        nodes = (resp.json().get("data") or {}).get("chapters", {}).get("nodes", [])
+        seen: set[int] = set()
+        ids: list[int] = []
+        for n in nodes:
+            mid = n.get("mangaId")
+            src = str((n.get("manga") or {}).get("sourceId", ""))
+            if mid and mid not in seen and src in _GOOD_SET:
+                seen.add(mid)
+                ids.append(mid)
+        return ids
+    except Exception:
+        return []
+
+
 @router.get("/api/popular")
 def get_popular():
     cached = cache.read("popular")
     if cached is not None:
         return cached
     rows = _query("""
-        SELECT id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
+        SELECT DISTINCT ON (LOWER(title))
+            id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
         FROM manga
-        ORDER BY RANDOM()
-        LIMIT 12
-    """)
-    out = {"mangaList": rows}
+        WHERE source_id IN %s
+        ORDER BY LOWER(title), RANDOM()
+        LIMIT 60
+    """, (_GOOD_SOURCES,))
+    import random
+    random.shuffle(rows)
+    out = {"mangaList": rows[:12]}
     cache.write("popular", out)
     return out
 
@@ -56,12 +106,30 @@ def get_latest():
     cached = cache.read("latest")
     if cached is not None:
         return cached
-    rows = _query("""
-        SELECT id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
-        FROM manga
-        ORDER BY updated_at DESC, id DESC
-        LIMIT 12
-    """)
+
+    recent_ids = _recent_manga_ids(120)
+
+    if len(recent_ids) >= 12:
+        id_rank = {v: i for i, v in enumerate(recent_ids)}
+        rows = _query("""
+            SELECT DISTINCT ON (LOWER(title))
+                id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
+            FROM manga
+            WHERE id = ANY(%s) AND source_id IN %s
+            ORDER BY LOWER(title), id
+        """, (recent_ids, _GOOD_SOURCES))
+        rows.sort(key=lambda r: id_rank.get(r["id"], 9999))
+        rows = rows[:12]
+    else:
+        rows = _query("""
+            SELECT DISTINCT ON (LOWER(title))
+                id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
+            FROM manga
+            WHERE source_id IN %s
+            ORDER BY LOWER(title), updated_at DESC
+            LIMIT 12
+        """, (_GOOD_SOURCES,))
+
     out = {"mangaList": rows}
     cache.write("latest", out)
     return out
@@ -73,13 +141,16 @@ def get_completed():
     if cached is not None:
         return cached
     rows = _query("""
-        SELECT id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
+        SELECT DISTINCT ON (LOWER(title))
+            id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
         FROM manga
-        WHERE status = 'COMPLETED'
-        ORDER BY RANDOM()
-        LIMIT 18
-    """)
-    out = {"mangaList": rows}
+        WHERE status = 'COMPLETED' AND source_id IN %s
+        ORDER BY LOWER(title), RANDOM()
+        LIMIT 60
+    """, (_GOOD_SOURCES,))
+    import random
+    random.shuffle(rows)
+    out = {"mangaList": rows[:18]}
     cache.write("completed", out)
     return out
 
@@ -89,12 +160,25 @@ def get_new():
     cached = cache.read("new")
     if cached is not None:
         return cached
+
+    # Exclude titles already in Latest so New and Latest don't overlap
+    latest = cache.read("latest")
+    latest_titles: set[str] = set()
+    if latest:
+        latest_titles = {m["title"].lower() for m in latest["mangaList"]}
+
     rows = _query("""
-        SELECT id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
+        SELECT DISTINCT ON (LOWER(title))
+            id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
         FROM manga
-        ORDER BY id DESC
-        LIMIT 24
-    """)
+        WHERE source_id IN %s
+        ORDER BY LOWER(title), RANDOM()
+        LIMIT 120
+    """, (_GOOD_SOURCES,))
+
+    # Filter out titles already in Latest, then take first 24
+    rows = [r for r in rows if r["title"].lower() not in latest_titles][:24]
+
     out = {"mangaList": rows}
     cache.write("new", out)
     return out

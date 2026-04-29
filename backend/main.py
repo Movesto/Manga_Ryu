@@ -7,7 +7,7 @@ import sync
 import auth
 import bookmarks
 import editors_choice
-from routes import home, catalog, manga as manga_routes, download as download_routes
+from routes import home, catalog, manga as manga_routes, download as download_routes, html_reader as html_reader_routes
 
 app = FastAPI(title="MangaReader API")
 _scheduler = BackgroundScheduler()
@@ -21,6 +21,7 @@ app.include_router(home.router)
 app.include_router(catalog.router)
 app.include_router(manga_routes.router)
 app.include_router(download_routes.router)
+app.include_router(html_reader_routes.router)
 
 # ── Startup / shutdown ────────────────────────────────────────────────────────
 

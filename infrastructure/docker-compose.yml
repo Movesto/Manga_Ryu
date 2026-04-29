@@ -7,7 +7,7 @@ services:
     ports:
       - "4567:4567"
     volumes:
-      - ./suwayomi-data:/app/data
+      - ./suwayomi-data:/home/suwayomi/.local/share/Tachidesk
     restart: unless-stopped
 
   postgres:

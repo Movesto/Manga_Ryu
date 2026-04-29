@@ -69,9 +69,56 @@ def get_manga_details(manga_id: str):
 def get_manga_chapters(manga_id: str):
     """
     Fetches the complete list of chapters for a specific manga.
+    Falls back to the GQL fetchChapters mutation if the REST endpoint
+    returns nothing (manga not yet cached in Suwayomi's local DB).
     """
-    endpoint = f"manga/{manga_id}/chapters"
-    return safe_fetch(endpoint)
+    result = safe_fetch(f"manga/{manga_id}/chapters")
+    if isinstance(result, list) and result:
+        return result
+
+    # REST returned empty or error — trigger a chapter fetch from the source
+    url = "http://127.0.0.1:4567/api/graphql"
+    query = """
+    mutation FetchChapters($input: FetchChaptersInput!) {
+      fetchChapters(input: $input) {
+        chapters {
+          id url name uploadDate chapterNumber scanlator mangaId
+          isRead lastPageRead isDownloaded isBookmarked fetchedAt
+        }
+      }
+    }
+    """
+    try:
+        resp = requests.post(
+            url,
+            json={"query": query, "variables": {"input": {"mangaId": int(manga_id)}}},
+            timeout=20,
+        )
+        chapters = (
+            ((resp.json().get("data") or {}).get("fetchChapters") or {})
+            .get("chapters", [])
+        )
+        if isinstance(chapters, list):
+            # Normalise GQL fields to match the REST shape the frontend expects
+            out = []
+            for c in chapters:
+                out.append({
+                    "id":            c.get("id"),
+                    "url":           c.get("url"),
+                    "name":          c.get("name"),
+                    "uploadDate":    c.get("uploadDate"),
+                    "chapterNumber": c.get("chapterNumber"),
+                    "scanlator":     c.get("scanlator"),
+                    "mangaId":       c.get("mangaId"),
+                    "read":          c.get("isRead", False),
+                    "bookmarked":    c.get("isBookmarked", False),
+                    "lastPageRead":  c.get("lastPageRead", 0),
+                    "fetchedAt":     c.get("fetchedAt"),
+                })
+            return out
+    except Exception:
+        pass
+    return []
 
 def get_chapter_pages(manga_id: str, chapter_id: str):
     """
