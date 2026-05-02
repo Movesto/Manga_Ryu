@@ -25,6 +25,7 @@ def create_bookmark_tables():
 
 @router.get("")
 def list_bookmarks(user: CurrentUser):
+    uid = user["id"]
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -34,11 +35,32 @@ def list_bookmarks(user: CurrentUser):
                 JOIN manga m ON m.id = b.manga_id
                 WHERE b.user_id = %s
                 ORDER BY b.created_at DESC
-            """, (user["id"],))
+            """, (uid,))
             rows = cur.fetchall()
             cols = ["id", "title", "thumbnailUrl", "status", "type",
                     "sourceName", "chapterCount", "bookmarkedAt"]
-            return [dict(zip(cols, r)) for r in rows]
+            results = [dict(zip(cols, r)) for r in rows]
+
+            if results:
+                manga_ids = [r["id"] for r in results]
+                cur.execute("""
+                    SELECT DISTINCT ON (manga_id)
+                        manga_id, chapter_id, chapter_number
+                    FROM reading_history
+                    WHERE user_id = %s AND manga_id = ANY(%s)
+                    ORDER BY manga_id, read_at DESC
+                """, (uid, manga_ids))
+                last_read = {row[0]: {"chapterId": row[1], "chapterNumber": float(row[2]) if row[2] else None}
+                             for row in cur.fetchall()}
+                for r in results:
+                    lr = last_read.get(r["id"])
+                    r["lastRead"] = lr
+                    if lr and lr["chapterNumber"] is not None and r["chapterCount"]:
+                        r["unreadCount"] = max(0, r["chapterCount"] - int(lr["chapterNumber"]))
+                    else:
+                        r["unreadCount"] = 0
+
+            return results
 
 
 @router.get("/{manga_id}")

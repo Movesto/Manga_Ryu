@@ -1,37 +1,47 @@
 import { useState, useEffect, useRef } from "react";
 import { useLoaderData, useRouteLoaderData, Link } from "react-router";
 import type { AuthUser } from "../lib/auth.server";
+import { getUser, getAccessToken } from "../lib/auth.server";
 import { API, imgUrl } from "../lib/config";
 import { relativeTime, chNum } from "../lib/utils";
-import { ChevronIcon } from "../components/icons";
+import { ChevronIcon, PlayIcon } from "../components/icons";
 import { MangaCard } from "../components/MangaCard";
 
-export async function loader() {
-  const [popularRes, latestRes, completedRes, newRes, editorsRes] = await Promise.all([
+export async function loader({ request }: { request: Request }) {
+  const user  = await getUser(request);
+  const token = user ? getAccessToken(request) : null;
+
+  const fetches: Promise<Response>[] = [
     fetch(`${API}/api/popular`),
     fetch(`${API}/api/latest`),
     fetch(`${API}/api/completed`),
     fetch(`${API}/api/new`),
     fetch(`${API}/api/editors-choice`),
-  ]);
-  const [popularData, latestData, completedData, newData, editorsData] = await Promise.all([
-    popularRes.json(),
-    latestRes.json(),
-    completedRes.json(),
-    newRes.json(),
-    editorsRes.json().catch(() => ({ mangaList: [] })),
-  ]);
-  const allPopular:   any[] = popularData.mangaList   || [];
-  const allLatest:    any[] = latestData.mangaList    || [];
-  const allCompleted: any[] = completedData.mangaList || [];
-  const allNew:       any[] = newData.mangaList       || [];
-  const editorsPick:  any[] = editorsData.mangaList   || [];
+  ];
+  if (token) {
+    fetches.push(fetch(`${API}/api/history?limit=12`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }));
+  }
+
+  const responses = await Promise.all(fetches.map(f => f.catch(() => null)));
+  const [popularData, latestData, completedData, newData, editorsData, historyData] =
+    await Promise.all(responses.map(r => r?.json().catch(() => ({}))));
+
+  const allPopular:   any[] = popularData?.mangaList   || [];
+  const allLatest:    any[] = latestData?.mangaList    || [];
+  const allCompleted: any[] = completedData?.mangaList || [];
+  const allNew:       any[] = newData?.mangaList       || [];
+  const editorsPick:  any[] = editorsData?.mangaList   || [];
+  const continueReading: any[] = historyData?.history  || [];
+
   return {
     sliderManga: allPopular.slice(0, 12),
     editorsPick,
-    latest:      allLatest.slice(0, 12),
-    completed:   allCompleted.slice(0, 18),
-    newSeries:   allNew.slice(0, 24),
+    latest:         allLatest.slice(0, 12),
+    completed:      allCompleted.slice(0, 18),
+    newSeries:      allNew.slice(0, 24),
+    continueReading,
   };
 }
 
@@ -239,6 +249,59 @@ function HeroSlider({ manga }: { manga: any[] }) {
             />
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Continue Reading ─────────────────────────────────────────────────────────
+
+function ContinueReading({ items }: { items: any[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section className="w-full px-4 sm:px-6 py-6 border-b border-zinc-800/40">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-bold text-white tracking-wide">Continue Reading</h2>
+        <Link
+          to="/history"
+          className="flex items-center gap-1 text-sm text-zinc-400 hover:text-orange-400 transition-colors"
+        >
+          View All
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </Link>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+        {items.map((item: any) => (
+          <Link
+            key={item.mangaId}
+            to={`/manga/${item.mangaId}/chapter/${item.lastChapterId}`}
+            className="flex-shrink-0 w-[110px] group"
+          >
+            <div className="relative rounded-xl overflow-hidden bg-zinc-800 mb-2" style={{ aspectRatio: "2/3" }}>
+              <img
+                src={imgUrl(item.mangaThumbnail)}
+                alt={item.mangaTitle}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+              <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+                <span className="text-[10px] font-semibold text-orange-400 bg-zinc-900/90 px-2 py-0.5 rounded-full">
+                  Ch. {item.lastChapterNumber != null ? chNum(item.lastChapterNumber) : "?"}
+                </span>
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="w-9 h-9 bg-orange-500/90 rounded-full flex items-center justify-center">
+                  <PlayIcon size={14} />
+                </div>
+              </div>
+            </div>
+            <p className="text-white text-[11px] font-medium line-clamp-2 group-hover:text-orange-400 transition-colors leading-snug">
+              {item.mangaTitle}
+            </p>
+          </Link>
+        ))}
       </div>
     </section>
   );
@@ -487,7 +550,7 @@ function EditorsPick({ manga, isAdmin }: { manga: any[]; isAdmin: boolean }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function Home() {
-  const { sliderManga, editorsPick, latest, completed, newSeries } =
+  const { sliderManga, editorsPick, latest, completed, newSeries, continueReading } =
     useLoaderData<typeof loader>();
   const rootData = useRouteLoaderData("root") as { user: AuthUser | null } | undefined;
   const isAdmin  = rootData?.user?.is_admin ?? false;
@@ -495,6 +558,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <HeroSlider manga={sliderManga} />
+      <ContinueReading items={continueReading} />
       <MangaGrid title="Latest Updates"   manga={latest}     viewAllHref="/latest" />
       <EditorsPick                         manga={editorsPick} isAdmin={isAdmin} />
       <MangaGrid title="Completed Series" manga={completed}   viewAllHref="/completed" hoverColor="text-blue-400" />

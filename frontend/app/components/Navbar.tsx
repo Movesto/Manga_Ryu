@@ -207,30 +207,51 @@ const navLinks = [
 
 // ── navbar ────────────────────────────────────────────────────────────────────
 
-export default function Navbar({ user }: { user: AuthUser | null }) {
+export default function Navbar({ user, readingMode = false }: { user: AuthUser | null; readingMode?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [navVisible, setNavVisible] = useState(true);
   const location = useLocation();
   const closeSearch = useCallback(() => setSearchOpen(false), []);
+  const lastScrollY = useRef(0);
 
   const isActive = (path: string) => location.pathname === path;
 
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        setSearchOpen(v => !v);
-      }
+    if (!readingMode) {
+      setNavVisible(true);
+      return;
+    }
+    lastScrollY.current = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      const diff = y - lastScrollY.current;
+      if (diff > 8)       setNavVisible(false);
+      else if (diff < -8) setNavVisible(true);
+      lastScrollY.current = y;
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, []);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [readingMode]);
+
+  // Reset visibility when leaving reading mode
+  useEffect(() => {
+    if (!readingMode) setNavVisible(true);
+  }, [readingMode]);
+
+  const navPositionClass = readingMode
+    ? "fixed inset-x-0 top-0"
+    : "sticky top-0";
+
+  const navVisibilityClass = readingMode
+    ? `transition-transform duration-300 ${navVisible ? "translate-y-0" : "-translate-y-full"}`
+    : "";
 
   return (
     <>
-      <nav className="sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 backdrop-blur-sm">
+      <nav className={`${navPositionClass} z-50 bg-zinc-950 border-b border-zinc-800 backdrop-blur-sm ${navVisibilityClass}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14">
 

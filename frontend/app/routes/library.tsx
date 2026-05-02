@@ -30,7 +30,9 @@ function BookmarkCard({ manga, onRemove }: { manga: any; onRemove: () => void })
     ONGOING: "Ongoing", COMPLETED: "Completed",
     HIATUS: "Hiatus", CANCELLED: "Cancelled",
   };
-  const status = manga.status?.toUpperCase() ?? "ONGOING";
+  const status    = manga.status?.toUpperCase() ?? "ONGOING";
+  const unread    = manga.unreadCount ?? 0;
+  const lastRead  = manga.lastRead;
 
   return (
     <div className="group relative bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden hover:border-zinc-700 transition-colors">
@@ -45,6 +47,11 @@ function BookmarkCard({ manga, onRemove }: { manga: any; onRemove: () => void })
           <span className={`absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor[status] ?? "text-zinc-400 bg-zinc-700"}`}>
             {statusLabel[status] ?? status}
           </span>
+          {unread > 0 && (
+            <span className="absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500 text-white">
+              +{unread}
+            </span>
+          )}
         </div>
         <div className="p-3">
           <p className="text-white text-sm font-semibold leading-snug line-clamp-2 group-hover:text-orange-400 transition-colors">
@@ -53,16 +60,20 @@ function BookmarkCard({ manga, onRemove }: { manga: any; onRemove: () => void })
           {manga.sourceName && (
             <p className="text-zinc-500 text-xs mt-1 truncate">{manga.sourceName}</p>
           )}
-          {manga.chapterCount > 0 && (
+          {lastRead ? (
+            <p className="text-orange-400/80 text-xs mt-0.5">
+              Last: Ch. {lastRead.chapterNumber != null ? Math.floor(lastRead.chapterNumber) : "?"}
+            </p>
+          ) : manga.chapterCount > 0 ? (
             <p className="text-zinc-600 text-xs mt-0.5">{manga.chapterCount} chapters</p>
-          )}
+          ) : null}
         </div>
       </Link>
 
       {/* Remove button */}
       <button
         onClick={e => { e.preventDefault(); onRemove(); }}
-        className="absolute top-2 right-2 p-1.5 bg-zinc-900/80 hover:bg-red-500/20 hover:text-red-400 text-zinc-400 rounded-lg transition-colors opacity-0 group-hover:opacity-100 border border-zinc-700"
+        className="absolute bottom-[4.5rem] right-2 p-1.5 bg-zinc-900/80 hover:bg-red-500/20 hover:text-red-400 text-zinc-400 rounded-lg transition-colors opacity-0 group-hover:opacity-100 border border-zinc-700"
         title="Remove bookmark"
       >
         <TrashIcon />

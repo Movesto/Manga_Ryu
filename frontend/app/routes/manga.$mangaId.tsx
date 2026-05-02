@@ -55,12 +55,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   let readChapterIds: number[] = [];
+  let lastRead: { chapterId: number; chapterNumber: number | null } | null = null;
   if (readRes?.ok) {
     const rData = await readRes.json();
     readChapterIds = rData.readChapterIds ?? [];
+    lastRead = rData.lastRead ?? null;
   }
 
-  return { manga, chapters, user, bookmarked, readChapterIds };
+  return { manga, chapters, user, bookmarked, readChapterIds, lastRead };
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ type DlState =
   | { status: "error"; message: string };
 
 export default function MangaDetail() {
-  const { manga, chapters, user, bookmarked: initialBookmarked, readChapterIds } = useLoaderData<typeof loader>();
+  const { manga, chapters, user, bookmarked: initialBookmarked, readChapterIds, lastRead } = useLoaderData<typeof loader>();
   const readSet = new Set(readChapterIds);
   const [descExpanded, setDescExpanded] = useState(false);
   const [chapSort, setChapSort] = useState<"desc" | "asc">("desc");
@@ -307,22 +309,44 @@ export default function MangaDetail() {
 
               {/* CTA buttons */}
               <div className="flex flex-col xs:flex-row flex-wrap gap-2 sm:gap-3 justify-center sm:justify-start mt-1">
-                {firstChapter && (
-                  <Link
-                    to={`/manga/${manga.id}/chapter/${firstChapter.id}`}
-                    className="inline-flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-400 text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition-colors"
-                  >
-                    <PlayIcon />
-                    Start Reading
-                  </Link>
-                )}
-                {latestChapter && latestChapter.id !== firstChapter?.id && (
-                  <Link
-                    to={`/manga/${manga.id}/chapter/${latestChapter.id}`}
-                    className="inline-flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-sm px-5 py-2.5 rounded-xl border border-zinc-700 transition-colors"
-                  >
-                    Latest Chapter
-                  </Link>
+                {lastRead ? (
+                  <>
+                    <Link
+                      to={`/manga/${manga.id}/chapter/${lastRead.chapterId}`}
+                      className="inline-flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-400 text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition-colors"
+                    >
+                      <PlayIcon />
+                      Continue Ch.{lastRead.chapterNumber != null ? ` ${chNum(lastRead.chapterNumber)}` : ""}
+                    </Link>
+                    {firstChapter && (
+                      <Link
+                        to={`/manga/${manga.id}/chapter/${firstChapter.id}`}
+                        className="inline-flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-sm px-5 py-2.5 rounded-xl border border-zinc-700 transition-colors"
+                      >
+                        Start Over
+                      </Link>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {firstChapter && (
+                      <Link
+                        to={`/manga/${manga.id}/chapter/${firstChapter.id}`}
+                        className="inline-flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-400 text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition-colors"
+                      >
+                        <PlayIcon />
+                        Start Reading
+                      </Link>
+                    )}
+                    {latestChapter && latestChapter.id !== firstChapter?.id && (
+                      <Link
+                        to={`/manga/${manga.id}/chapter/${latestChapter.id}`}
+                        className="inline-flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-sm px-5 py-2.5 rounded-xl border border-zinc-700 transition-colors"
+                      >
+                        Latest Chapter
+                      </Link>
+                    )}
+                  </>
                 )}
                 <button
                   onClick={handleBookmark}

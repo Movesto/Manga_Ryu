@@ -82,12 +82,22 @@ export default function ChapterReader() {
   const navigate = useNavigate();
   const { revalidate } = useRevalidator();
   const [widthMode, setWidthMode] = useState<WidthMode>("comfortable");
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [controlsVisible, setControlsVisible] = useState(true);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lastScrollY   = useRef(0);
   const lastTapTime   = useRef(0);
   const initialTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load saved width preference
+  useEffect(() => {
+    const saved = localStorage.getItem("reader-width");
+    if (saved && (WIDTH_MODES as readonly string[]).includes(saved)) {
+      setWidthMode(saved as WidthMode);
+    }
+  }, []);
 
   // Show on load for 3s so the user knows controls exist, then hide
   useEffect(() => {
@@ -153,9 +163,25 @@ export default function ChapterReader() {
 
   const cycleWidth = () => {
     setWidthMode(m => {
-      const idx = WIDTH_MODES.indexOf(m);
-      return WIDTH_MODES[(idx + 1) % WIDTH_MODES.length];
+      const idx  = WIDTH_MODES.indexOf(m);
+      const next = WIDTH_MODES[(idx + 1) % WIDTH_MODES.length];
+      localStorage.setItem("reader-width", next);
+      return next;
     });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
+      if (dx < 0 && nextChapter) navigate(`/manga/${mangaId}/chapter/${nextChapter.id}`);
+      if (dx > 0 && prevChapter) navigate(`/manga/${mangaId}/chapter/${prevChapter.id}`);
+    }
   };
 
   const chapterName = currentChapter?.name
@@ -167,12 +193,18 @@ export default function ChapterReader() {
     <div
       className="min-h-screen bg-[#0a0a0a] text-white"
       onClick={handleTap}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
+      {/* Spacer for fixed navbar in reading mode */}
+      <div className="h-14" />
 
       {/* ── Sticky chapter bar ─────────────────────────────────────────── */}
       <div
-        className={`sticky top-14 z-40 transition-all duration-300 ${
-          controlsVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full pointer-events-none"
+        className={`sticky z-40 transition-all duration-300 ${
+          controlsVisible
+            ? "top-14 opacity-100 translate-y-0"
+            : "top-0 opacity-0 -translate-y-full pointer-events-none"
         }`}
       >
         <div className="bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800/60">

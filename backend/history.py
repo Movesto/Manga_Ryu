@@ -58,11 +58,19 @@ def get_read_chapters(manga_id: int, user: CurrentUser):
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT chapter_id FROM reading_history WHERE user_id = %s AND manga_id = %s",
+                """SELECT chapter_id, chapter_number FROM reading_history
+                   WHERE user_id = %s AND manga_id = %s
+                   ORDER BY read_at DESC""",
                 (user["id"], manga_id),
             )
-            ids = [row[0] for row in cur.fetchall()]
-    return {"readChapterIds": ids}
+            rows = cur.fetchall()
+    last_read = None
+    if rows:
+        last_read = {
+            "chapterId":     rows[0][0],
+            "chapterNumber": float(rows[0][1]) if rows[0][1] is not None else None,
+        }
+    return {"readChapterIds": [r[0] for r in rows], "lastRead": last_read}
 
 
 @router.get("/api/history")
