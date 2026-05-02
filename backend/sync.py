@@ -11,9 +11,9 @@ import suwayomi
 import database
 from psycopg2.extras import execute_values
 
-MAX_POPULAR_PAGES = 10   # up to 10 × 20 = 200 manga per source
-MAX_LATEST_PAGES  = 5
-MAX_COMPLETED_PAGES = 5
+MAX_POPULAR_PAGES = 25   # up to 25 × 20 = 500 manga per source
+MAX_LATEST_PAGES  = 15
+MAX_COMPLETED_PAGES = 15
 
 _lock    = threading.Lock()
 _running = False

@@ -1,5 +1,17 @@
 import threading
+import os
+from pathlib import Path
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Load .env if present
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import database
@@ -7,9 +19,18 @@ import sync
 import auth
 import bookmarks
 import editors_choice
+import history
 from routes import home, catalog, manga as manga_routes, download as download_routes, html_reader as html_reader_routes
 
-app = FastAPI(title="MangaReader API")
+app = FastAPI(title="Manga Ryu API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://mangaryu.org", "http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 _scheduler = BackgroundScheduler()
 
 # ── Routers ───────────────────────────────────────────────────────────────────
@@ -17,6 +38,7 @@ _scheduler = BackgroundScheduler()
 app.include_router(auth.router)
 app.include_router(bookmarks.router)
 app.include_router(editors_choice.router)
+app.include_router(history.router)
 app.include_router(home.router)
 app.include_router(catalog.router)
 app.include_router(manga_routes.router)
@@ -33,6 +55,7 @@ def on_startup():
     auth.ensure_first_admin()
     bookmarks.create_bookmark_tables()
     editors_choice.create_table()
+    history.create_history_tables()
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM manga")

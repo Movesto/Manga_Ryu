@@ -13,9 +13,15 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import Navbar from "./components/Navbar";
+import { MangaRyuLogo, SITE_NAME } from "./components/Logo";
 import { getUser } from "./lib/auth.server";
 
 export const links: Route.LinksFunction = () => [
+  {
+    rel: "icon",
+    type: "image/svg+xml",
+    href: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28' fill='none'%3E%3Cpath d='M14 2C10.5 2 7.5 4.5 7 8.5C6.5 12 8.5 14.5 10 17.5C11 19.5 10.5 22.5 9 25C11.5 23.5 14.5 21 15.5 18C16 20.5 15.5 23.5 13.5 26C16 24.5 19 22 20 18.5C21 15.5 20.5 11.5 18.5 9C17.5 7 17.5 4.5 19 2.5C17.5 2.2 15.7 2 14 2Z' fill='%23f97316'/%3E%3Cpath d='M13.5 7.5C12.5 10 12.5 13 13.5 15.5C14 17 14 19 13 21.5C15 19.5 16 17 15.5 14C15 11.5 14.2 9 13.5 7.5Z' fill='%23fbbf24'/%3E%3Cpath d='M18.5 3.5C21 1.5 24 2.5 23 5.5C22.5 7.5 19.5 6.5 18.5 3.5Z' fill='%23fb923c'/%3E%3Cpath d='M7 11C4.5 9.5 3 12 5 13.5C6 14.5 8 13.5 7 11Z' fill='%23fb923c'/%3E%3C/svg%3E",
+  },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
@@ -27,6 +33,17 @@ export const links: Route.LinksFunction = () => [
     href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
   },
 ];
+
+export function meta() {
+  return [
+    { title: SITE_NAME },
+    { name: "description", content: "Read manga, manhwa and manhua online — powered by Manga Ryu." },
+    { property: "og:title", content: SITE_NAME },
+    { property: "og:site_name", content: SITE_NAME },
+    { property: "og:description", content: "Read manga, manhwa and manhua online." },
+    { name: "theme-color", content: "#f97316" },
+  ];
+}
 
 // Security headers applied to every HTML response
 const SECURITY_HEADERS = {
@@ -171,6 +188,24 @@ function HomeSkeleton() {
   );
 }
 
+// ── Footer ────────────────────────────────────────────────────────────────────
+
+function Footer() {
+  return (
+    <footer className="border-t border-zinc-800/60 mt-16 py-8 bg-zinc-950">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <MangaRyuLogo size={20} />
+          <span className="text-zinc-400 text-sm font-semibold">{SITE_NAME}</span>
+        </div>
+        <p className="text-zinc-600 text-xs text-center sm:text-right">
+          © {new Date().getFullYear()} mangaryu.org &mdash; Read manga, manhwa &amp; manhua online
+        </p>
+      </div>
+    </footer>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -191,10 +226,13 @@ export default function App() {
         </div>
       )}
       <Navbar user={user} />
-      {isManga   ? <MangaDetailSkeleton /> :
-       isChapter  ? <ChapterSkeleton />     :
-       isHome     ? <HomeSkeleton />        :
-       <Outlet />}
+      <div className="flex flex-col min-h-screen">
+        {isManga   ? <MangaDetailSkeleton /> :
+         isChapter  ? <ChapterSkeleton />     :
+         isHome     ? <HomeSkeleton />        :
+         <Outlet />}
+        {!isChapter && <Footer />}
+      </div>
     </>
   );
 }

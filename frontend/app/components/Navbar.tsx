@@ -3,9 +3,10 @@ import { Link, useLocation, useNavigate, useFetcher, Form } from "react-router";
 import type { AuthUser } from "../lib/auth.server";
 import { imgUrl } from "../lib/config";
 import {
-  BookOpenIcon, SearchIcon, XIcon, BookmarkIcon, CompassIcon,
+  SearchIcon, XIcon, BookmarkIcon, CompassIcon, HistoryIcon,
   UserIcon, LogOutIcon, ShieldIcon, MenuIcon, CloseIcon,
 } from "./icons";
+import { MangaRyuLogo, SITE_NAME } from "./Logo";
 
 // ── search overlay ────────────────────────────────────────────────────────────
 
@@ -156,6 +157,14 @@ function UserMenu({ user }: { user: AuthUser }) {
             <p className="text-sm font-semibold text-white truncate">{user.username}</p>
           </div>
           <Link
+            to="/history"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+          >
+            <HistoryIcon size={16} />
+            History
+          </Link>
+          <Link
             to="/library"
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
@@ -191,8 +200,9 @@ function UserMenu({ user }: { user: AuthUser }) {
 // ── nav links ─────────────────────────────────────────────────────────────────
 
 const navLinks = [
-  { to: "/browse",  label: "Browse",    icon: <CompassIcon /> },
-  { to: "/library", label: "Bookmarks", icon: <BookmarkIcon /> },
+  { to: "/browse",   label: "Browse",    icon: <CompassIcon />,  authOnly: false },
+  { to: "/history",  label: "History",   icon: <HistoryIcon />,  authOnly: true  },
+  { to: "/library",  label: "Bookmarks", icon: <BookmarkIcon />, authOnly: true  },
 ];
 
 // ── navbar ────────────────────────────────────────────────────────────────────
@@ -228,13 +238,13 @@ export default function Navbar({ user }: { user: AuthUser | null }) {
               to="/"
               className="flex items-center gap-2 text-white hover:text-orange-400 transition-colors flex-shrink-0"
             >
-              <span className="text-orange-400"><BookOpenIcon /></span>
-              <span className="font-bold text-lg tracking-tight">MangaReader</span>
+              <MangaRyuLogo size={26} />
+              <span className="font-bold text-lg tracking-tight">{SITE_NAME}</span>
             </Link>
 
             {/* Desktop nav */}
             <div className="hidden sm:flex items-center gap-1">
-              {navLinks.map(({ to, label, icon }) => (
+              {navLinks.filter(l => !l.authOnly || user).map(({ to, label, icon }) => (
                 <Link
                   key={to}
                   to={to}
@@ -304,7 +314,7 @@ export default function Navbar({ user }: { user: AuthUser | null }) {
         {/* Mobile dropdown */}
         {menuOpen && (
           <div className="sm:hidden border-t border-zinc-800 bg-zinc-950 px-4 pb-4 pt-2 flex flex-col gap-1">
-            {navLinks.map(({ to, label, icon }) => (
+            {navLinks.filter(l => !l.authOnly || user).map(({ to, label, icon }) => (
               <Link
                 key={to}
                 to={to}

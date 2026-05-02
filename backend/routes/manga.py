@@ -34,7 +34,17 @@ def get_catalog(source_id: str, page: int = 1):
 
 @router.get("/api/manga/{manga_id}")
 def get_manga(manga_id: str):
-    return suwayomi.get_manga_details(manga_id)
+    data = suwayomi.get_manga_details(manga_id)
+    try:
+        with database.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT rating FROM manga WHERE id = %s", (int(manga_id),))
+                row = cur.fetchone()
+                if row and row[0] is not None:
+                    data["rating"] = row[0]
+    except Exception:
+        pass
+    return data
 
 
 @router.get("/api/manga/{manga_id}/chapters")

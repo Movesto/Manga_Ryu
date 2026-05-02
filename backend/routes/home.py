@@ -12,20 +12,6 @@ import database
 
 router = APIRouter(tags=["home"])
 
-# English-only source IDs with working thumbnails and chapters.
-_GOOD_SOURCES = (
-    "6247824327199706550",  # Asura Scans
-    "3406901199711327034",  # Kayn Scans
-    "2900023289777642714",  # Manga Demon
-    "2499283573021220255",  # MangaDex EN
-    "1201694572804778862",  # Mangafreak
-    "5075089422240578347",  # ManhuaPlus (Unoriginal)
-    "5806040666300479660",  # QiScans
-    "368848319592333339",   # Top Manhua
-    "4972933717624256217",  # Comick EN
-)
-_GOOD_SET = set(_GOOD_SOURCES)
-
 GQL = "http://127.0.0.1:4567/api/graphql"
 
 
@@ -55,14 +41,14 @@ def _query(sql: str, params=()) -> list[dict]:
 def _recent_manga_ids(fetch: int = 120) -> list[int]:
     """
     Ask Suwayomi for manga whose chapters were most recently uploaded.
-    Returns manga IDs ordered newest-first, deduplicated, from good sources only.
+    Returns manga IDs ordered newest-first, deduplicated.
     """
     try:
         resp = requests.post(
             GQL,
             json={"query": f"""{{
                 chapters(orderBy: UPLOAD_DATE, orderByType: DESC, first: {fetch}) {{
-                    nodes {{ mangaId manga {{ sourceId }} }}
+                    nodes {{ mangaId }}
                 }}
             }}"""},
             timeout=5,
@@ -72,8 +58,7 @@ def _recent_manga_ids(fetch: int = 120) -> list[int]:
         ids: list[int] = []
         for n in nodes:
             mid = n.get("mangaId")
-            src = str((n.get("manga") or {}).get("sourceId", ""))
-            if mid and mid not in seen and src in _GOOD_SET:
+            if mid and mid not in seen:
                 seen.add(mid)
                 ids.append(mid)
         return ids
@@ -86,14 +71,25 @@ def get_popular():
     cached = cache.read("popular")
     if cached is not None:
         return cached
+    # Prefer highly rated manga (AniList 85+/100); fall back to any known-status manga
     rows = _query("""
         SELECT DISTINCT ON (LOWER(title))
             id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
         FROM manga
-        WHERE source_id IN %s
-        ORDER BY LOWER(title), RANDOM()
+        WHERE rating >= 85
+          AND status NOT IN ('UNKNOWN', 'ON_HIATUS', 'CANCELLED')
+        ORDER BY LOWER(title), rating DESC
         LIMIT 60
-    """, (_GOOD_SOURCES,))
+    """)
+    if len(rows) < 12:
+        rows = _query("""
+            SELECT DISTINCT ON (LOWER(title))
+                id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
+            FROM manga
+            WHERE status NOT IN ('UNKNOWN', 'ON_HIATUS', 'CANCELLED')
+            ORDER BY LOWER(title), RANDOM()
+            LIMIT 60
+        """)
     import random
     random.shuffle(rows)
     out = {"mangaList": rows[:12]}
@@ -115,9 +111,9 @@ def get_latest():
             SELECT DISTINCT ON (LOWER(title))
                 id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
             FROM manga
-            WHERE id = ANY(%s) AND source_id IN %s
+            WHERE id = ANY(%s) AND status NOT IN ('UNKNOWN', 'ON_HIATUS', 'CANCELLED')
             ORDER BY LOWER(title), id
-        """, (recent_ids, _GOOD_SOURCES))
+        """, (recent_ids,))
         rows.sort(key=lambda r: id_rank.get(r["id"], 9999))
         rows = rows[:12]
     else:
@@ -125,10 +121,10 @@ def get_latest():
             SELECT DISTINCT ON (LOWER(title))
                 id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
             FROM manga
-            WHERE source_id IN %s
+            WHERE status NOT IN ('UNKNOWN', 'ON_HIATUS', 'CANCELLED')
             ORDER BY LOWER(title), updated_at DESC
             LIMIT 12
-        """, (_GOOD_SOURCES,))
+        """)
 
     out = {"mangaList": rows}
     cache.write("latest", out)
@@ -144,10 +140,10 @@ def get_completed():
         SELECT DISTINCT ON (LOWER(title))
             id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
         FROM manga
-        WHERE status = 'COMPLETED' AND source_id IN %s
+        WHERE status = 'COMPLETED'
         ORDER BY LOWER(title), RANDOM()
         LIMIT 60
-    """, (_GOOD_SOURCES,))
+    """)
     import random
     random.shuffle(rows)
     out = {"mangaList": rows[:18]}
@@ -171,10 +167,10 @@ def get_new():
         SELECT DISTINCT ON (LOWER(title))
             id, title, thumbnail_url, status, source_name, source_id, inferred_type, chapter_count
         FROM manga
-        WHERE source_id IN %s
+        WHERE status NOT IN ('UNKNOWN', 'ON_HIATUS', 'CANCELLED')
         ORDER BY LOWER(title), RANDOM()
         LIMIT 120
-    """, (_GOOD_SOURCES,))
+    """)
 
     # Filter out titles already in Latest, then take first 24
     rows = [r for r in rows if r["title"].lower() not in latest_titles][:24]

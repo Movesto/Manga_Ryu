@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLoaderData, Link, useNavigate, useRevalidator } from "react-router";
 import { API } from "../lib/config";
+import { getAccessToken } from "../lib/auth.server";
 import { chNum } from "../lib/utils";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronIcon, WidthIcon } from "../components/icons";
 
-export async function loader({ params }: { params: Record<string, string> }) {
+export async function loader({ params, request }: { params: Record<string, string>; request: Request }) {
   const { mangaId, chapterId } = params;
+  const token = getAccessToken(request);
 
   const [pagesRes, chaptersRes, mangaRes] = await Promise.all([
     fetch(`${API}/api/manga/${mangaId}/chapter/${chapterId}`),
@@ -33,9 +35,23 @@ export async function loader({ params }: { params: Record<string, string> }) {
 
   const idx            = allChapters.findIndex(c => String(c.id) === String(chapterId));
   const currentChapter = allChapters[idx] ?? pagesData;
-  // Sorted newest-first → next = lower index (newer), prev = higher index (older)
   const nextChapter    = idx > 0                       ? allChapters[idx - 1] : null;
   const prevChapter    = idx < allChapters.length - 1  ? allChapters[idx + 1] : null;
+
+  // Mark chapter as read for logged-in users (fire-and-forget)
+  if (token) {
+    fetch(`${API}/api/history/mark`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        manga_id:        parseInt(mangaId),
+        chapter_id:      parseInt(chapterId),
+        chapter_number:  currentChapter?.chapterNumber ?? null,
+        manga_title:     manga?.title ?? null,
+        manga_thumbnail: manga?.thumbnailUrl ?? null,
+      }),
+    }).catch(() => {});
+  }
 
   return { pages, manga, currentChapter, nextChapter, prevChapter, mangaId, chapterId };
 }

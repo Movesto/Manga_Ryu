@@ -6,6 +6,13 @@ import { API, imgUrl } from "../lib/config";
 import { chNum, relativeTime } from "../lib/utils";
 import { BookmarkIcon, PlayIcon, ArrowLeftIcon, ChevronIcon, DownloadIcon } from "../components/icons";
 
+export function meta({ data }: Route.MetaArgs) {
+  const title = data?.manga?.title;
+  return [
+    { title: title ? `${title} — Manga Ryu` : "Manga Ryu" },
+  ];
+}
+
 export async function loader({ params, request }: Route.LoaderArgs) {
   const id = params.mangaId;
   const user = await getUser(request);
@@ -22,12 +29,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         headers: { Authorization: `Bearer ${token}` },
       }).catch(() => null)
     );
+    fetchPromises.push(
+      fetch(`${API}/api/history/read-chapters/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => null)
+    );
   }
 
   const results = await Promise.allSettled(fetchPromises);
   const detailRes   = results[0].status === "fulfilled" ? results[0].value : null;
   const chaptersRes = results[1].status === "fulfilled" ? results[1].value : null;
   const bookmarkRes = results[2]?.status === "fulfilled" ? results[2].value : null;
+  const readRes     = results[3]?.status === "fulfilled" ? results[3].value : null;
 
   const manga    = detailRes   ? await detailRes.json()   : {};
   const raw      = chaptersRes ? await chaptersRes.json() : [];
@@ -41,7 +54,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     bookmarked = bData.bookmarked ?? false;
   }
 
-  return { manga, chapters, user, bookmarked };
+  let readChapterIds: number[] = [];
+  if (readRes?.ok) {
+    const rData = await readRes.json();
+    readChapterIds = rData.readChapterIds ?? [];
+  }
+
+  return { manga, chapters, user, bookmarked, readChapterIds };
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -77,7 +96,8 @@ type DlState =
   | { status: "error"; message: string };
 
 export default function MangaDetail() {
-  const { manga, chapters, user, bookmarked: initialBookmarked } = useLoaderData<typeof loader>();
+  const { manga, chapters, user, bookmarked: initialBookmarked, readChapterIds } = useLoaderData<typeof loader>();
+  const readSet = new Set(readChapterIds);
   const [descExpanded, setDescExpanded] = useState(false);
   const [chapSort, setChapSort] = useState<"desc" | "asc">("desc");
   const [dlStates, setDlStates] = useState<Record<number, DlState>>({});
@@ -255,6 +275,11 @@ export default function MangaDetail() {
 
               <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
                 <StatusBadge status={manga.status} />
+                {manga.rating != null && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border bg-yellow-500/10 text-yellow-400 border-yellow-500/30">
+                    ★ {(manga.rating / 10).toFixed(1)}
+                  </span>
+                )}
                 {sourceName && (
                   <span className="text-xs font-medium bg-zinc-800 text-zinc-300 px-2.5 py-1 rounded-full border border-zinc-700">
                     {sourceName}
@@ -377,8 +402,9 @@ export default function MangaDetail() {
           <div className="flex flex-col divide-y divide-zinc-800/50">
             {sortedChapters.map((ch, idx) => {
               const dlState: DlState = dlStates[ch.id] ?? { status: "idle" };
-              const isLoading = dlState.status === "loading";
+              const isLoading  = dlState.status === "loading";
               const isSelected = selected.has(ch.id);
+              const isRead     = ch.read || readSet.has(ch.id);
               return (
                 <div key={ch.id ?? idx} className="group relative flex flex-col rounded-xl hover:bg-zinc-900 overflow-hidden transition-colors">
                   <div className="flex items-center gap-1 px-2 sm:px-3">
@@ -407,9 +433,9 @@ export default function MangaDetail() {
                       className="flex items-center gap-3 sm:gap-4 py-3 flex-1 min-w-0"
                       onClick={selecting ? e => { e.preventDefault(); toggleSelect(ch.id); } : undefined}
                     >
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ch.read ? "bg-zinc-700" : "bg-orange-400"}`} />
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isRead ? "bg-zinc-700" : "bg-orange-400"}`} />
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${ch.read ? "text-zinc-500 group-hover:text-zinc-400" : "text-white group-hover:text-orange-400"} transition-colors`}>
+                        <p className={`text-sm font-medium truncate ${isRead ? "text-zinc-500 group-hover:text-zinc-400" : "text-white group-hover:text-orange-400"} transition-colors`}>
                           {ch.name && ch.name.toLowerCase() !== `chapter ${chNum(ch.chapterNumber)}`.toLowerCase()
                             ? ch.name
                             : `Chapter ${chNum(ch.chapterNumber)}`}

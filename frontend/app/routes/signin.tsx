@@ -3,6 +3,7 @@ import { redirect, useActionData, useNavigation, Link } from "react-router";
 import type { Route } from "./+types/signin";
 import { getUser, authCookieHeaders } from "../lib/auth.server";
 import { API } from "../lib/config";
+import { MangaRyuLogo, SITE_NAME } from "../components/Logo";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const user = await getUser(request);
@@ -81,12 +82,9 @@ export default function SignIn() {
 
         {/* Logo */}
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 text-orange-400 hover:text-orange-300 transition-colors">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-            </svg>
-            <span className="text-xl font-bold text-white">MangaReader</span>
+          <Link to="/" className="inline-flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <MangaRyuLogo size={32} />
+            <span className="text-xl font-bold text-white">{SITE_NAME}</span>
           </Link>
           <p className="text-zinc-500 text-sm mt-2">
             {tab === "login" ? "Sign in to your account" : "Create your account"}

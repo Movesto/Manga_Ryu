@@ -4,6 +4,8 @@ services:
   suwayomi:
     image: ghcr.io/suwayomi/suwayomi-server:latest
     container_name: suwayomi-engine
+    environment:
+      JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true"
     ports:
       - "4567:4567"
     volumes:

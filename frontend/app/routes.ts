@@ -8,6 +8,7 @@ export default [
   route("latest",               "routes/latest.tsx"),
   route("completed",            "routes/completed.tsx"),
   route("library",              "routes/library.tsx"),
+  route("history",              "routes/history.tsx"),
   route("signin",               "routes/signin.tsx"),
   route("signout",              "routes/signout.tsx"),
   route("bookmark",             "routes/bookmark.tsx"),
