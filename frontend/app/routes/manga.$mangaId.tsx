@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLoaderData, Link, useFetcher, useNavigate } from "react-router";
+import { useLoaderData, Link, useFetcher, useNavigate, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/manga.$mangaId";
 import { getUser, getAccessToken } from "../lib/auth.server";
 import { API, imgUrl } from "../lib/config";
@@ -108,6 +108,7 @@ export default function MangaDetail() {
   const [bundleState, setBundleState] = useState<DlState>({ status: "idle" });
   const bookmarkFetcher = useFetcher<{ bookmarked: boolean }>();
   const navigate = useNavigate();
+  const { csrf } = useRouteLoaderData("root") as { csrf: string };
 
   const sortedChapters = chapSort === "desc" ? chapters : [...chapters].reverse();
   const firstChapter   = chapters[chapters.length - 1];
@@ -127,7 +128,7 @@ export default function MangaDetail() {
       return;
     }
     bookmarkFetcher.submit(
-      { manga_id: manga.id, intent: isBookmarked ? "remove" : "add" },
+      { manga_id: manga.id, intent: isBookmarked ? "remove" : "add", csrf_token: csrf },
       { method: "post", action: "/bookmark" }
     );
   }

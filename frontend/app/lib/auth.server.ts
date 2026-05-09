@@ -19,6 +19,10 @@ export function getAccessToken(request: Request) {
   return parseCookie(request, "access_token");
 }
 
+export function getRefreshToken(request: Request) {
+  return parseCookie(request, "refresh_token");
+}
+
 export function authCookieHeaders(access: string, refresh: string): [string, string][] {
   return [
     ["Set-Cookie", `access_token=${encodeURIComponent(access)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800; Secure`],

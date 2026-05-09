@@ -1,5 +1,6 @@
-import { Link, useLoaderData, useFetcher, redirect } from "react-router";
+import { Link, useLoaderData, useFetcher, redirect, useRouteLoaderData } from "react-router";
 import { getUser, getAccessToken } from "../lib/auth.server";
+import { verifyCsrf } from "../lib/csrf.server";
 import { API, imgUrl } from "../lib/config";
 import { relativeTime, chNum } from "../lib/utils";
 
@@ -20,6 +21,12 @@ export async function action({ request }: { request: Request }) {
   if (!user) return { ok: false };
   const token = getAccessToken(request)!;
   const form  = await request.formData();
+
+  const submitted = form.get("csrf_token") as string | null;
+  if (!verifyCsrf(request, submitted)) {
+    throw new Response("Invalid CSRF token", { status: 403 });
+  }
+
   const mangaId = form.get("manga_id");
   if (!mangaId) return { ok: false };
 
@@ -36,6 +43,7 @@ export function meta() {
 
 export default function History() {
   const { history } = useLoaderData<typeof loader>();
+  const { csrf } = useRouteLoaderData("root") as { csrf: string };
   const fetcher = useFetcher();
 
   const optimisticRemoved = new Set<number>();
@@ -116,6 +124,7 @@ export default function History() {
                   </Link>
                   <fetcher.Form method="post">
                     <input type="hidden" name="manga_id" value={h.mangaId} />
+                    <input type="hidden" name="csrf_token" value={csrf} />
                     <button
                       type="submit"
                       title="Remove from history"

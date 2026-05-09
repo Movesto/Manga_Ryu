@@ -2,7 +2,8 @@
 Manga detail, chapters, pages, and misc Suwayomi pass-through endpoints.
 """
 import time
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from ratelimit import limiter
 
 import suwayomi
 import sync
@@ -62,7 +63,8 @@ def get_pages(manga_id: str, chapter_id: str):
 
 
 @router.post("/api/sync")
-def trigger_sync(_: AdminUser):
+@limiter.limit("1/minute")
+def trigger_sync(request: Request, _: AdminUser):
     import threading
     if sync._running:
         return {"status": "already_running"}

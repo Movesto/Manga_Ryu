@@ -16,6 +16,8 @@ import "./app.css";
 import Navbar from "./components/Navbar";
 import { MangaRyuLogo, SITE_NAME } from "./components/Logo";
 import { getUser } from "./lib/auth.server";
+import { generateCsrfToken, getCsrfToken, csrfCookieHeader } from "./lib/csrf.server";
+import { data } from "react-router";
 
 export const links: Route.LinksFunction = () => [
   {
@@ -69,8 +71,11 @@ const SECURITY_HEADERS = {
     "object-src 'none';",
 };
 
-export function headers() {
-  return SECURITY_HEADERS;
+export function headers({ loaderHeaders }: { loaderHeaders: Headers }) {
+  const result: Record<string, string> = { ...SECURITY_HEADERS };
+  const setCookie = loaderHeaders.get("Set-Cookie");
+  if (setCookie) result["Set-Cookie"] = setCookie;
+  return result;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -83,7 +88,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const user = await getUser(request);
-  return { user };
+  const csrf = getCsrfToken(request) ?? generateCsrfToken();
+  return data({ user, csrf }, { headers: { "Set-Cookie": csrfCookieHeader(csrf) } });
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -215,7 +221,7 @@ function Footer() {
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, csrf } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const matches = useMatches();
 
@@ -236,7 +242,7 @@ export default function App() {
           <div className="h-full bg-orange-500 progress-bar" />
         </div>
       )}
-      <Navbar user={user} readingMode={readingMode} />
+      <Navbar user={user} csrf={csrf} readingMode={readingMode} />
       <div className="flex flex-col min-h-screen">
         {isManga   ? <MangaDetailSkeleton /> :
          isChapter  ? <ChapterSkeleton />     :

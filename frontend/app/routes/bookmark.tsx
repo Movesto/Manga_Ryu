@@ -1,12 +1,18 @@
 import type { Route } from "./+types/bookmark";
 import { API } from "../lib/config";
 import { getAccessToken } from "../lib/auth.server";
+import { verifyCsrf } from "../lib/csrf.server";
 
 export async function action({ request }: Route.ActionArgs) {
   const token = getAccessToken(request);
   if (!token) return { bookmarked: false, error: "Not authenticated" };
 
   const form    = await request.formData();
+  const submitted = form.get("csrf_token") as string | null;
+  if (!verifyCsrf(request, submitted)) {
+    throw new Response("Invalid CSRF token", { status: 403 });
+  }
+
   const mangaId = form.get("manga_id") as string;
   const intent  = form.get("intent") as string;
 

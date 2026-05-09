@@ -126,7 +126,7 @@ function SearchOverlay({ onClose }: { onClose: () => void }) {
 
 // ── user menu (desktop) ───────────────────────────────────────────────────────
 
-function UserMenu({ user }: { user: AuthUser }) {
+function UserMenu({ user, csrf }: { user: AuthUser; csrf: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -183,6 +183,7 @@ function UserMenu({ user }: { user: AuthUser }) {
             </Link>
           )}
           <Form method="post" action="/signout">
+            <input type="hidden" name="csrf_token" value={csrf} />
             <button
               type="submit"
               className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-300 hover:text-red-400 hover:bg-zinc-800 transition-colors"
@@ -207,7 +208,7 @@ const navLinks = [
 
 // ── navbar ────────────────────────────────────────────────────────────────────
 
-export default function Navbar({ user, readingMode = false }: { user: AuthUser | null; readingMode?: boolean }) {
+export default function Navbar({ user, csrf, readingMode = false }: { user: AuthUser | null; csrf: string; readingMode?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [navVisible, setNavVisible] = useState(true);
@@ -293,7 +294,7 @@ export default function Navbar({ user, readingMode = false }: { user: AuthUser |
               </button>
 
               {user ? (
-                <UserMenu user={user} />
+                <UserMenu user={user} csrf={csrf} />
               ) : (
                 <Link
                   to="/signin"
@@ -370,6 +371,7 @@ export default function Navbar({ user, readingMode = false }: { user: AuthUser |
                   </Link>
                 )}
                 <Form method="post" action="/signout">
+                  <input type="hidden" name="csrf_token" value={csrf} />
                   <button
                     type="submit"
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-colors"

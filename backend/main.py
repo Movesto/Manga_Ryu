@@ -1,8 +1,13 @@
 import threading
 import os
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from ratelimit import limiter
 
 # Load .env if present
 _env_file = Path(__file__).parent / ".env"
@@ -12,6 +17,7 @@ if _env_file.exists():
         if _line and not _line.startswith("#") and "=" in _line:
             _k, _v = _line.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip())
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import database
@@ -24,13 +30,18 @@ from routes import home, catalog, manga as manga_routes, download as download_ro
 
 app = FastAPI(title="Manga Ryu API")
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://mangaryu.org", "http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
 )
+
 _scheduler = BackgroundScheduler()
 
 # ── Routers ───────────────────────────────────────────────────────────────────

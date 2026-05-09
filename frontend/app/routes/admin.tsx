@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { redirect, useLoaderData, useFetcher, Link } from "react-router";
+import { redirect, useLoaderData, useFetcher, Link, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/admin";
 import { getUser, getAccessToken } from "../lib/auth.server";
+import { verifyCsrf } from "../lib/csrf.server";
 import { API, imgUrl } from "../lib/config";
 import { SearchIcon, TrashIcon, PlusIcon, ShieldIcon } from "../components/icons";
 
@@ -20,10 +21,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 // ── action ────────────────────────────────────────────────────────────────────
 
 export async function action({ request }: Route.ActionArgs) {
+  const form    = await request.formData();
+  const submitted = form.get("csrf_token") as string | null;
+  if (!verifyCsrf(request, submitted)) {
+    throw new Response("Invalid CSRF token", { status: 403 });
+  }
+
   const token = getAccessToken(request);
   if (!token) return { error: "Not authenticated" };
 
-  const form    = await request.formData();
   const intent  = form.get("intent") as string;
   const mangaId = form.get("manga_id") as string;
 
@@ -142,6 +148,7 @@ function MangaSearchBox({
 
 export default function AdminPage() {
   const { user, picks: initialPicks } = useLoaderData<typeof loader>();
+  const { csrf } = useRouteLoaderData("root") as { csrf: string };
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
 
   const submitting     = fetcher.state !== "idle";
@@ -158,14 +165,14 @@ export default function AdminPage() {
 
   function handleAdd(manga: any) {
     fetcher.submit(
-      { intent: "add", manga_id: manga.id },
+      { intent: "add", manga_id: manga.id, csrf_token: csrf },
       { method: "post" }
     );
   }
 
   function handleRemove(mangaId: number) {
     fetcher.submit(
-      { intent: "remove", manga_id: mangaId },
+      { intent: "remove", manga_id: mangaId, csrf_token: csrf },
       { method: "post" }
     );
   }

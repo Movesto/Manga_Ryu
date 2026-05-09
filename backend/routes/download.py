@@ -19,8 +19,9 @@ import time
 import uuid
 
 import requests
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse
+from ratelimit import limiter
 
 router = APIRouter(tags=["download"])
 log = logging.getLogger(__name__)
@@ -332,7 +333,8 @@ def _run_conversion(job_id: str, manga_id: str, chapter_id: str, profile: str) -
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/api/manga/{manga_id}/chapter/{chapter_id}/download")
-def start_download(manga_id: str, chapter_id: str, profile: str = "KPW5"):
+@limiter.limit("5/minute")
+def start_download(request: Request, manga_id: str, chapter_id: str, profile: str = "KPW5"):
     """Start a background Kindle conversion job. Returns {job_id} immediately."""
     if profile not in _VALID_PROFILES:
         raise HTTPException(400, f"Invalid profile '{profile}'")
@@ -358,7 +360,8 @@ def start_download(manga_id: str, chapter_id: str, profile: str = "KPW5"):
 
 
 @router.post("/api/manga/{manga_id}/download/pdf")
-def start_pdf_download(manga_id: str, body: dict):
+@limiter.limit("5/minute")
+def start_pdf_download(request: Request, manga_id: str, body: dict):
     """Start a PDF export job for one or more chapters. Returns {job_id}."""
     chapter_ids = body.get("chapter_ids", [])
     if not chapter_ids:

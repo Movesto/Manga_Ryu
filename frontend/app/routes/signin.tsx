@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { redirect, useActionData, useNavigation, Link } from "react-router";
+import { redirect, useActionData, useNavigation, Link, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/signin";
 import { getUser, authCookieHeaders } from "../lib/auth.server";
+import { verifyCsrf } from "../lib/csrf.server";
 import { API } from "../lib/config";
 import { MangaRyuLogo, SITE_NAME } from "../components/Logo";
 
@@ -13,6 +14,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   const form = await request.formData();
+  const submitted = form.get("csrf_token") as string | null;
+  if (!verifyCsrf(request, submitted)) {
+    throw new Response("Invalid CSRF token", { status: 403 });
+  }
+
   const intent = form.get("intent") as string;
 
   if (intent === "login") {
@@ -72,6 +78,7 @@ export default function SignIn() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
+  const { csrf } = useRouteLoaderData("root") as { csrf: string };
 
   const error = actionData?.error;
   const errorTab = actionData?.intent;
@@ -122,6 +129,7 @@ export default function SignIn() {
           {tab === "login" && (
             <form method="post" className="flex flex-col gap-4">
               <input type="hidden" name="intent" value="login" />
+              <input type="hidden" name="csrf_token" value={csrf} />
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">Username</label>
                 <input
@@ -158,6 +166,7 @@ export default function SignIn() {
           {tab === "register" && (
             <form method="post" className="flex flex-col gap-4">
               <input type="hidden" name="intent" value="register" />
+              <input type="hidden" name="csrf_token" value={csrf} />
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">Username</label>
                 <input

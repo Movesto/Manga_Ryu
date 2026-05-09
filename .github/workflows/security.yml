@@ -1,0 +1,174 @@
+name: Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Minimum permissions — only escalate where needed
+permissions:
+  contents: read
+  security-events: write   # upload SARIF to GitHub Security tab
+
+jobs:
+
+  # ── Job 1: Secret Scanning ────────────────────────────────────────────────
+  # Scans the full git history for leaked credentials, API keys, tokens.
+  # Fails immediately if any secret is found — this is a hard gate.
+  secrets:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history, not just the latest commit
+
+      - name: Install Gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz -C /usr/local/bin gitleaks
+
+      - name: Scan for secrets
+        run: gitleaks detect --source . --verbose --redact --exit-code 1
+
+  # ── Job 2: SAST ───────────────────────────────────────────────────────────
+  # Static analysis: finds security bugs in source code without running it.
+  # Covers OWASP Top 10, Python, FastAPI, JWT, React, TypeScript rule sets.
+  # Uploads findings to GitHub Security → Code Scanning tab as SARIF.
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep — collect all findings
+        run: |
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/python \
+            --config p/fastapi \
+            --config p/jwt \
+            --config p/react \
+            --config p/typescript \
+            --sarif \
+            --output semgrep.sarif \
+            --exclude .venv \
+            --exclude node_modules \
+            --exclude build
+        continue-on-error: true   # always produce SARIF even when findings exist
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Fail on HIGH / CRITICAL findings
+        run: |
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/python \
+            --config p/fastapi \
+            --config p/jwt \
+            --config p/react \
+            --config p/typescript \
+            --severity ERROR \
+            --error \
+            --exclude .venv \
+            --exclude node_modules \
+            --exclude build
+
+  # ── Job 3a: SCA — Python ─────────────────────────────────────────────────
+  # Checks backend Python dependencies against known CVE databases.
+  # pip-audit uses OSV + PyPI Advisory DB — no token needed.
+  sca-backend:
+    name: SCA — Python (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit Python dependencies
+        run: pip-audit -r backend/requirements.txt --format json --output pip-audit.json
+        continue-on-error: true   # collect the report regardless
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit.json
+
+      - name: Fail on any vulnerability
+        run: pip-audit -r backend/requirements.txt
+
+  # ── Job 3b: SCA — Node.js ────────────────────────────────────────────────
+  # Checks frontend npm dependencies against the npm advisory database.
+  # --audit-level=high means LOW/MODERATE don't fail the build.
+  sca-frontend:
+    name: SCA — Node.js (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+        working-directory: frontend
+
+  # ── Job 4: Deploy ─────────────────────────────────────────────────────────
+  # Only runs on push to main AND only after all three security jobs pass.
+  # Requires three GitHub secrets (see README setup section):
+  #   SSH_HOST        — server hostname or IP (e.g. mangaryu.org)
+  #   SSH_USER        — SSH login user         (e.g. hamid)
+  #   SSH_PRIVATE_KEY — private key matching the public key on the server
+  deploy:
+    name: Deploy to Production
+    needs: [secrets, sast, sca-backend, sca-frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /home/hamid/Documents/Manga_Ryu
+
+            # Pull latest code
+            git pull origin main
+
+            # Reinstall backend deps if requirements changed
+            backend/.venv/bin/pip install -r backend/requirements.txt -q
+
+            # Rebuild frontend
+            cd frontend
+            npm ci --prefer-offline
+            npm run build
+            cd ..
+
+            # Restart services (requires NOPASSWD in sudoers for these two commands)
+            sudo systemctl restart mangaryu-backend.service
+            sudo systemctl restart mangaryu-frontend.service

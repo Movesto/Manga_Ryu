@@ -2,7 +2,8 @@
 Browse and search — DB-backed with live Suwayomi fallback when DB is sparse.
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
+from ratelimit import limiter
 
 import cache
 import database
@@ -87,7 +88,8 @@ def _live_search(q: str) -> list:
 
 
 @router.get("/api/search")
-def search_manga(q: str = "", page: int = 1):
+@limiter.limit("30/minute")
+def search_manga(request: Request, q: str = "", page: int = 1):
     q = q.strip()
     if len(q) < 3:
         return {"mangaList": [], "query": q}
