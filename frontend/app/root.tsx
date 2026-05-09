@@ -60,6 +60,11 @@ const SECURITY_HEADERS = {
   "X-Frame-Options":           "DENY",
   "Referrer-Policy":           "strict-origin-when-cross-origin",
   "Permissions-Policy":        "camera=(), microphone=(), geolocation=()",
+  // TODO: replace 'unsafe-inline' in script-src with per-request nonces.
+  // Requires creating app/entry.server.tsx, generating a nonce there,
+  // threading it through loadContext → root loader → headers(), and
+  // passing it to <Scripts nonce={nonce} />.  Style 'unsafe-inline' is
+  // kept because React's style={{...}} props require it.
   "Content-Security-Policy":
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline'; " +

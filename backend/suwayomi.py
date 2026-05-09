@@ -1,7 +1,8 @@
+import os
 import requests
 
-# The base URL for your local docker container
-BASE_URL = "http://127.0.0.1:4567/api/v1" 
+_SUWAYOMI = os.getenv("SUWAYOMI_URL", "http://127.0.0.1:4567")
+BASE_URL = f"{_SUWAYOMI}/api/v1"
 
 def safe_fetch(endpoint):
     """
@@ -77,7 +78,7 @@ def get_manga_chapters(manga_id: str):
         return result
 
     # REST returned empty or error — trigger a chapter fetch from the source
-    url = "http://127.0.0.1:4567/api/graphql"
+    url = f"{_SUWAYOMI}/api/graphql"
     query = """
     mutation FetchChapters($input: FetchChaptersInput!) {
       fetchChapters(input: $input) {
@@ -134,7 +135,7 @@ def fetch_chapter_pages_gql(chapter_id: str) -> list:
     The chapter_id must be the Suwayomi database chapter id (integer).
     Returns a list of relative URL paths like ['/api/v1/manga/1/chapter/164/page/0', ...]
     """
-    url = "http://127.0.0.1:4567/api/graphql"
+    url = f"{_SUWAYOMI}/api/graphql"
     query = """
     mutation FetchPages($input: FetchChapterPagesInput!) {
       fetchChapterPages(input: $input) {
@@ -222,7 +223,7 @@ def search_graphql(source_id: str, graphql_filters: list, page: int = 1):
     Bypasses the REST API and sends a direct GraphQL mutation 
     to fetch manga using filters, just like the official Web UI.
     """
-    url = "http://127.0.0.1:4567/api/graphql"
+    url = f"{_SUWAYOMI}/api/graphql"
     
     # The exact query you extracted from the Network tab!
     query = """

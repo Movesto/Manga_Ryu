@@ -1,11 +1,16 @@
 """
 Fetches manga ratings from AniList and stores them in the DB.
 AniList scores are 0–100; we store them as-is (e.g. 87.5).
-Run: python ratings.py
+Run: python ratings.py  — or scheduled weekly from main.py
 """
+import logging
 import time
+
 import requests
+
 import database
+
+log = logging.getLogger(__name__)
 
 ANILIST = "https://graphql.anilist.co"
 QUERY = """
@@ -36,7 +41,7 @@ def _fetch_page(page: int) -> tuple[list[dict], bool]:
         has_next = data.get("pageInfo", {}).get("hasNextPage", False)
         return data.get("media", []), has_next
     except Exception as e:
-        print(f"  [ratings] fetch error page {page}: {e}")
+        log.error("ratings fetch error page %d: %s", page, e)
         return [], False
 
 
@@ -54,11 +59,12 @@ def _all_titles(entry: dict) -> list[str]:
 
 def fetch_and_store(max_pages: int = 40):
     """Fetch top-rated manga from AniList and upsert ratings into DB."""
-    database.init_pool()
+    if database._pool is None:
+        database.init_pool()
 
     # Build title → score map
     score_map: dict[str, float] = {}
-    print(f"[ratings] Fetching up to {max_pages} pages from AniList …")
+    log.info("ratings: fetching up to %d pages from AniList", max_pages)
     for page in range(1, max_pages + 1):
         media, has_next = _fetch_page(page)
         for entry in media:
@@ -68,12 +74,12 @@ def fetch_and_store(max_pages: int = 40):
             for title in _all_titles(entry):
                 if title not in score_map:
                     score_map[title] = float(score)
-        print(f"  page {page}: {len(media)} entries, map size {len(score_map)}")
+        log.debug("ratings: page %d — %d entries, map size %d", page, len(media), len(score_map))
         if not has_next:
             break
         time.sleep(0.7)  # stay within AniList rate limit
 
-    print(f"[ratings] Built score map with {len(score_map)} titles.")
+    log.info("ratings: built score map with %d titles", len(score_map))
 
     # Match against DB titles
     with database.get_conn() as conn:
@@ -88,7 +94,7 @@ def fetch_and_store(max_pages: int = 40):
         if score is not None:
             updates.append((score, mid))
 
-    print(f"[ratings] Matched {len(updates)} manga. Updating DB …")
+    log.info("ratings: matched %d manga, updating DB", len(updates))
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             from psycopg2.extras import execute_values
@@ -100,7 +106,7 @@ def fetch_and_store(max_pages: int = 40):
             )
             conn.commit()
 
-    print(f"[ratings] Done. {len(updates)} ratings stored.")
+    log.info("ratings: done — %d ratings stored", len(updates))
 
 
 if __name__ == "__main__":

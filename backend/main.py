@@ -1,15 +1,9 @@
+import logging
 import threading
 import os
 from pathlib import Path
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from ratelimit import limiter
 
-# Load .env if present
+# ── Load .env before anything else ────────────────────────────────────────────
 _env_file = Path(__file__).parent / ".env"
 if _env_file.exists():
     for _line in _env_file.read_text().splitlines():
@@ -18,15 +12,35 @@ if _env_file.exists():
             _k, _v = _line.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip())
 
+# ── Structured JSON logging (configure before any module imports) ──────────────
+from pythonjsonlogger import jsonlogger as _jl
+_handler = logging.StreamHandler()
+_handler.setFormatter(_jl.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+logging.root.handlers = [_handler]
+logging.root.setLevel(logging.INFO)
+
+import requests as _requests
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from ratelimit import limiter
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import database
 import sync
 import auth
+import audit
+import ratings
 import bookmarks
 import editors_choice
 import history
 from routes import home, catalog, manga as manga_routes, download as download_routes, html_reader as html_reader_routes
+
+_SUWAYOMI_URL = os.getenv("SUWAYOMI_URL", "http://127.0.0.1:4567")
 
 app = FastAPI(title="Manga Ryu API")
 
@@ -64,6 +78,7 @@ def on_startup():
     database.create_schema()
     auth.create_auth_tables()
     auth.ensure_first_admin()
+    audit.create_audit_table()
     bookmarks.create_bookmark_tables()
     editors_choice.create_table()
     history.create_history_tables()
@@ -74,6 +89,7 @@ def on_startup():
     if manga_count == 0:
         threading.Thread(target=sync.run_sync, daemon=True).start()
     _scheduler.add_job(sync.run_sync, "interval", hours=6, id="sync")
+    _scheduler.add_job(ratings.fetch_and_store, "interval", weeks=1, id="ratings")
     _scheduler.start()
 
 
@@ -86,8 +102,33 @@ def on_shutdown():
 
 @app.get("/health")
 def health_check():
-    with database.get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM manga")
-            total = cur.fetchone()[0]
-    return {"status": "online", "manga_in_db": total, "sync_running": sync._running}
+    checks: dict = {}
+    healthy = True
+
+    # Database
+    try:
+        with database.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM manga")
+                checks["database"] = {"status": "ok", "manga_count": cur.fetchone()[0]}
+    except Exception as exc:
+        checks["database"] = {"status": "error", "error": str(exc)[:120]}
+        healthy = False
+
+    # Suwayomi
+    try:
+        r = _requests.get(f"{_SUWAYOMI_URL}/api/v1/settings/about/", timeout=5)
+        checks["suwayomi"] = {"status": "ok" if r.ok else "degraded", "http_status": r.status_code}
+        if not r.ok:
+            healthy = False
+    except Exception as exc:
+        checks["suwayomi"] = {"status": "error", "error": str(exc)[:120]}
+        healthy = False
+
+    checks["sync"] = {"running": sync._running}
+
+    status_code = 200 if healthy else 503
+    return JSONResponse(
+        {"status": "healthy" if healthy else "degraded", "checks": checks},
+        status_code=status_code,
+    )

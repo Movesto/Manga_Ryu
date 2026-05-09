@@ -135,7 +135,44 @@ jobs:
         run: npm audit --audit-level=high
         working-directory: frontend
 
-  # ── Job 4: Deploy ─────────────────────────────────────────────────────────
+  # ── Job 4: Container Scan ─────────────────────────────────────────────────
+  # Builds the backend Docker image and scans it for OS/library CVEs.
+  # Uploads CRITICAL/HIGH findings to the GitHub Security tab as SARIF.
+  # Fails on any unfixed CRITICAL or HIGH vulnerability.
+  container-scan:
+    name: Container Scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t manga-backend:scan ./backend
+
+      - name: Run Trivy — collect SARIF
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          image-ref: manga-backend:scan
+          format: sarif
+          output: trivy.sarif
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+        continue-on-error: true   # always produce SARIF even when findings exist
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+      - name: Fail on unfixed CRITICAL/HIGH CVEs
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          image-ref: manga-backend:scan
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+  # ── Job 5: Deploy ─────────────────────────────────────────────────────────
   # Only runs on push to main AND only after all three security jobs pass.
   # Requires three GitHub secrets (see README setup section):
   #   SSH_HOST        — server hostname or IP (e.g. mangaryu.org)
@@ -143,7 +180,7 @@ jobs:
   #   SSH_PRIVATE_KEY — private key matching the public key on the server
   deploy:
     name: Deploy to Production
-    needs: [secrets, sast, sca-backend, sca-frontend]
+    needs: [secrets, sast, sca-backend, sca-frontend, container-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

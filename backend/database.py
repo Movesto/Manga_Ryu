@@ -1,7 +1,10 @@
+import logging
 import os
 import contextlib
 import psycopg2
 from psycopg2 import pool as pg_pool
+
+log = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -66,4 +69,4 @@ def create_schema():
                 ON manga_genre(lower(genre));
             """)
             conn.commit()
-    print("[db] Schema ready.")
+    log.info("database schema ready")

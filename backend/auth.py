@@ -17,6 +17,7 @@ from pydantic import BaseModel, EmailStr
 from ratelimit import limiter
 
 import database
+import audit
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +25,9 @@ logger = logging.getLogger(__name__)
 
 _raw_secret = os.getenv("JWT_SECRET")
 if not _raw_secret:
-    _raw_secret = secrets.token_hex(32)
-    logger.warning(
-        "JWT_SECRET env var is not set — using a random secret. "
-        "All sessions will be invalidated on restart. "
-        "Set JWT_SECRET in your environment to persist sessions."
+    raise RuntimeError(
+        "JWT_SECRET is not set. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
     )
 SECRET_KEY     = _raw_secret
 ALGORITHM      = "HS256"
@@ -204,6 +203,7 @@ def register(request: Request, body: RegisterBody):
             user_id = cur.fetchone()[0]
             conn.commit()
 
+    audit.log_event("register", actor=body.username, ip=request.client.host if request.client else None)
     return TokenOut(
         access_token=_make_access_token(user_id, body.username),
         refresh_token=_make_refresh_token(user_id),
@@ -213,6 +213,7 @@ def register(request: Request, body: RegisterBody):
 @router.post("/login", response_model=TokenOut)
 @limiter.limit("10/minute")
 def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
+    ip = request.client.host if request.client else None
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -222,14 +223,17 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
             row = cur.fetchone()
 
     if not row or not _verify(form.password, row[2]):
+        audit.log_event("login_failure", actor=form.username, ip=ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not row[3]:
+        audit.log_event("login_failure", actor=form.username, ip=ip, detail={"reason": "account_disabled"})
         raise HTTPException(403, "Account disabled")
 
+    audit.log_event("login", actor=row[1], ip=ip)
     return TokenOut(
         access_token=_make_access_token(row[0], row[1]),
         refresh_token=_make_refresh_token(row[0]),
@@ -274,7 +278,7 @@ def me(user: CurrentUser):
 
 
 @router.post("/logout", status_code=204)
-def logout(body: RefreshBody):
+def logout(request: Request, body: RefreshBody):
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -282,3 +286,4 @@ def logout(body: RefreshBody):
                 (body.refresh_token,),
             )
             conn.commit()
+    audit.log_event("logout", ip=request.client.host if request.client else None)
