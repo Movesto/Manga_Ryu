@@ -63,7 +63,9 @@ jobs:
         continue-on-error: true   # always produce SARIF even when findings exist
 
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        continue-on-error: true   # private repos without GHAS will get "not accessible"
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -159,7 +161,9 @@ jobs:
         continue-on-error: true   # always produce SARIF even when findings exist
 
       - name: Upload Trivy SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        continue-on-error: true   # private repos without GHAS will get "not accessible"
         with:
           sarif_file: trivy.sarif
           category: trivy
