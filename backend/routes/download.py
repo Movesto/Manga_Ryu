@@ -26,9 +26,9 @@ from ratelimit import limiter
 router = APIRouter(tags=["download"])
 log = logging.getLogger(__name__)
 
-SUWAYOMI = "http://127.0.0.1:4567"
+SUWAYOMI = os.getenv("SUWAYOMI_URL", "http://127.0.0.1:4567")
 GQL_URL  = f"{SUWAYOMI}/api/graphql"
-KCC      = "/home/cade/.local/bin/kcc-c2e"
+KCC      = os.getenv("KCC_PATH", "/home/cade/.local/bin/kcc-c2e")
 
 _VALID_PROFILES = {
     "K1", "K2", "KDX", "K34", "K57", "KPW", "KV", "KPW34", "K810",

@@ -6,24 +6,74 @@ services:
     container_name: suwayomi-engine
     environment:
       JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true"
-    ports:
-      - "4567:4567"
+    expose:
+      - "4567"
     volumes:
       - ./suwayomi-data:/home/suwayomi/.local/share/Tachidesk
+    networks:
+      - internal
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4567/api/v1/settings/about/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   postgres:
     image: postgres:16-alpine
     container_name: manga-postgres
     environment:
-      POSTGRES_DB: manga_db
-      POSTGRES_USER: manga
-      POSTGRES_PASSWORD: manga
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-manga_db}
+      POSTGRES_USER: ${POSTGRES_USER:-manga}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    expose:
+      - "5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-manga} -d ${POSTGRES_DB:-manga_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: manga-backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-manga}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-manga_db}
+      SUWAYOMI_URL: http://suwayomi:4567
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-10080}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-30}
+      KCC_PATH: ${KCC_PATH:-}
+    expose:
+      - "8000"
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      suwayomi:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  internal:
+    driver: bridge
 
 volumes:
   postgres-data:
