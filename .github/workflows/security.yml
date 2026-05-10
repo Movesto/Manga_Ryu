@@ -151,7 +151,7 @@ jobs:
         run: docker build -t manga-backend:scan ./backend
 
       - name: Run Trivy — collect SARIF
-        uses: aquasecurity/trivy-action@0.31.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: manga-backend:scan
           format: sarif
@@ -169,7 +169,7 @@ jobs:
           category: trivy
 
       - name: Fail on unfixed CRITICAL/HIGH CVEs
-        uses: aquasecurity/trivy-action@0.31.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: manga-backend:scan
           exit-code: '1'

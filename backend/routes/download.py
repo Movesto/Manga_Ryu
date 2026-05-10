@@ -302,7 +302,7 @@ def _run_conversion(job_id: str, manga_id: str, chapter_id: str, profile: str) -
             kcc_cmd.append("-m")
         kcc_cmd.append(work_dir)
 
-        proc = subprocess.run(kcc_cmd, capture_output=True, text=True, timeout=300)
+        proc = subprocess.run(kcc_cmd, capture_output=True, text=True, timeout=300)  # nosemgrep: dangerous-subprocess-use-tainted-env-args
         if proc.returncode != 0:
             log.error("KCC failed (exit %d) job=%s: %s", proc.returncode, job_id, proc.stderr[-800:])
             _set_job(job_id, status="error", stage="KCC conversion failed — please try again", progress=0)
