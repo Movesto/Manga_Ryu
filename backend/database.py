@@ -68,5 +68,16 @@ def create_schema():
             CREATE INDEX IF NOT EXISTS idx_genre_lower
                 ON manga_genre(lower(genre));
             """)
+
+            cur.execute("""
+                ALTER TABLE manga
+                    ADD COLUMN IF NOT EXISTS chapters_updated_at TIMESTAMPTZ;
+                ALTER TABLE manga
+                    ADD COLUMN IF NOT EXISTS ai_tagged BOOLEAN DEFAULT FALSE;
+                CREATE INDEX IF NOT EXISTS idx_manga_chapters_updated
+                    ON manga(chapters_updated_at);
+                CREATE INDEX IF NOT EXISTS idx_manga_ai_tagged
+                    ON manga(ai_tagged) WHERE ai_tagged = FALSE;
+            """)
             conn.commit()
     log.info("database schema ready")

@@ -32,6 +32,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 import database
 import sync
+import tagger
 import auth
 import audit
 import ratings
@@ -76,6 +77,7 @@ app.include_router(html_reader_routes.router)
 def on_startup():
     database.init_pool()
     database.create_schema()
+    tagger.load()
     auth.create_auth_tables()
     auth.ensure_first_admin()
     audit.create_audit_table()
@@ -89,6 +91,7 @@ def on_startup():
     if manga_count == 0:
         threading.Thread(target=sync.run_sync, daemon=True).start()
     _scheduler.add_job(sync.run_sync, "interval", hours=6, id="sync")
+    _scheduler.add_job(sync.refresh_bookmarked_chapters, "interval", hours=12, id="chapter_refresh")
     _scheduler.add_job(ratings.fetch_and_store, "interval", weeks=1, id="ratings")
     _scheduler.start()
 

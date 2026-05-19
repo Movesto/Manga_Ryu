@@ -7,6 +7,7 @@ from ratelimit import limiter
 
 import suwayomi
 import sync
+import tagger
 import database
 from auth import AdminUser
 
@@ -70,3 +71,35 @@ def trigger_sync(request: Request, _: AdminUser):
         return {"status": "already_running"}
     threading.Thread(target=sync.run_sync, daemon=True).start()
     return {"status": "started"}
+
+
+@router.post("/api/admin/retag")
+@limiter.limit("1/minute")
+def trigger_retag(request: Request, _: AdminUser):
+    """
+    Reset ai_tagged=FALSE on all manga and re-run the tagger.
+    Use this after deploying a newly trained model.
+    """
+    if not tagger.is_ready():
+        return {"status": "tagger_not_loaded"}
+    import threading
+    with database.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE manga SET ai_tagged = FALSE")
+            conn.commit()
+    threading.Thread(target=sync.tag_new_manga, kwargs={"batch_size": 5000}, daemon=True).start()
+    return {"status": "started"}
+
+
+@router.get("/api/admin/tagger/status")
+def tagger_status(_: AdminUser):
+    """Return whether the tagger model is loaded and how many manga need tagging."""
+    result: dict = {"model_loaded": tagger.is_ready()}
+    try:
+        with database.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM manga WHERE ai_tagged = FALSE")
+                result["untagged_count"] = cur.fetchone()[0]
+    except Exception:
+        pass
+    return result

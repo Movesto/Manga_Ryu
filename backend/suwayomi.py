@@ -156,6 +156,34 @@ def fetch_chapter_pages_gql(chapter_id: str) -> list:
     except Exception:
         return []
 
+def fetch_chapters_fresh(manga_id: str) -> list:
+    """
+    Force Suwayomi to pull the chapter list from the source (not its cache)
+    and return the chapters. Used for proactive chapter refresh.
+    """
+    url = f"{_SUWAYOMI}/api/graphql"
+    query = """
+    mutation FetchChapters($input: FetchChaptersInput!) {
+      fetchChapters(input: $input) {
+        chapters { id chapterNumber }
+      }
+    }
+    """
+    try:
+        resp = requests.post(
+            url,
+            json={"query": query, "variables": {"input": {"mangaId": int(manga_id)}}},
+            timeout=30,
+        )
+        chapters = (
+            ((resp.json().get("data") or {}).get("fetchChapters") or {})
+            .get("chapters", [])
+        )
+        return chapters if isinstance(chapters, list) else []
+    except Exception:
+        return []
+
+
 def install_extension(pkg_name: str):
     """
     Commands Suwayomi to download and install a new extension.

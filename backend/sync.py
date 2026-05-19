@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import suwayomi
 import database
+import tagger
 from psycopg2.extras import execute_values
 
 MAX_POPULAR_PAGES = 25   # up to 25 × 20 = 500 manga per source
@@ -17,6 +18,9 @@ MAX_COMPLETED_PAGES = 15
 
 _lock    = threading.Lock()
 _running = False
+
+_refresh_lock    = threading.Lock()
+_refresh_running = False
 
 # ── type inference ────────────────────────────────────────────────────────────
 
@@ -185,6 +189,118 @@ def upsert_search_results(manga_list: list):
     _upsert_batch(manga_list, "ONGOING")
 
 
+def tag_new_manga(batch_size: int = 200):
+    """
+    Find manga with ai_tagged=FALSE and run genre predictions on them.
+    Predicted genres are inserted into manga_genre (existing source genres
+    are never overwritten — ON CONFLICT DO NOTHING).
+    """
+    if not tagger.is_ready():
+        return
+
+    try:
+        with database.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, title, description
+                    FROM manga
+                    WHERE ai_tagged = FALSE
+                      AND description IS NOT NULL
+                      AND description != ''
+                    LIMIT %s
+                """, (batch_size,))
+                rows = cur.fetchall()
+
+        if not rows:
+            return
+
+        print(f"[sync] Auto-tagging {len(rows)} manga …")
+        tagged = 0
+
+        for manga_id, title, description in rows:
+            try:
+                tags = tagger.predict(title or "", description or "")
+                with database.get_conn() as conn:
+                    with conn.cursor() as cur:
+                        if tags:
+                            execute_values(cur, """
+                                INSERT INTO manga_genre (manga_id, genre)
+                                VALUES %s
+                                ON CONFLICT DO NOTHING
+                            """, [(manga_id, tag) for tag in tags])
+                        cur.execute(
+                            "UPDATE manga SET ai_tagged = TRUE WHERE id = %s",
+                            (manga_id,),
+                        )
+                        conn.commit()
+                tagged += 1
+            except Exception:
+                traceback.print_exc()
+
+        print(f"[sync] Auto-tagged {tagged}/{len(rows)} manga.")
+    except Exception:
+        traceback.print_exc()
+
+
+def refresh_bookmarked_chapters():
+    """
+    For every bookmarked manga whose chapters haven't been refreshed in the
+    last 12 hours, force Suwayomi to pull fresh chapter data from the source
+    and update chapter_count in the DB.
+    """
+    global _refresh_running
+    with _refresh_lock:
+        if _refresh_running:
+            print("[sync] Chapter refresh already running, skipping.")
+            return
+        _refresh_running = True
+
+    try:
+        with database.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT b.manga_id
+                    FROM bookmarks b
+                    JOIN manga m ON m.id = b.manga_id
+                    WHERE m.chapters_updated_at IS NULL
+                       OR m.chapters_updated_at < NOW() - INTERVAL '12 hours'
+                """)
+                manga_ids = [row[0] for row in cur.fetchall()]
+
+        if not manga_ids:
+            print("[sync] Chapter refresh: no stale bookmarked manga.")
+            return
+
+        print(f"[sync] Refreshing chapters for {len(manga_ids)} bookmarked manga …")
+        updated = 0
+
+        for manga_id in manga_ids:
+            try:
+                chapters = suwayomi.fetch_chapters_fresh(str(manga_id))
+                if not chapters:
+                    continue
+                count = len(chapters)
+                with database.get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE manga
+                            SET chapter_count       = GREATEST(chapter_count, %s),
+                                chapters_updated_at = NOW()
+                            WHERE id = %s
+                        """, (count, manga_id))
+                        conn.commit()
+                updated += 1
+            except Exception:
+                traceback.print_exc()
+
+        print(f"[sync] Chapter refresh done. Updated {updated}/{len(manga_ids)} manga.")
+    except Exception:
+        traceback.print_exc()
+    finally:
+        with _refresh_lock:
+            _refresh_running = False
+
+
 # ── public entry point ────────────────────────────────────────────────────────
 
 def run_sync():
@@ -213,6 +329,7 @@ def run_sync():
                 cur.execute("SELECT COUNT(*) FROM manga")
                 total = cur.fetchone()[0]
         print(f"[sync] Done. DB now has {total} manga.")
+        tag_new_manga()
     except Exception:
         traceback.print_exc()
     finally:

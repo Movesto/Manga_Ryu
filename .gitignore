@@ -22,6 +22,11 @@ frontend/dist/
 frontend/.cache/
 .cache/
 
+# ── ML model artifacts (large, machine-generated) ────────────────────────────
+ml/model/
+ml/data.csv
+ml/.venv/
+
 # ── Infrastructure / data ─────────────────────────────────────────────────────
 infrastructure/suwayomi-data/
 infrastructure/postgres-data/
