@@ -73,7 +73,19 @@ step "Preflight checks"
 
 [ "$(id -u)" -eq 0 ] && die "Run as a regular user with sudo (e.g. 'ubuntu'), not root."
 command -v sudo >/dev/null || die "sudo is required."
-sudo -v || die "Need working sudo."
+# Prefer a non-interactive check: on Oracle's Ubuntu image the 'ubuntu' user
+# has passwordless sudo, and `sudo -v` would wrongly prompt for a password
+# that was never set. Only fall back to an interactive prompt if passwordless
+# sudo isn't available (i.e. the user actually has a sudo password).
+if sudo -n true 2>/dev/null; then
+  ok "sudo: passwordless (Oracle default)"
+elif sudo -v; then
+  ok "sudo: authenticated"
+else
+  die "sudo needs a password and none works. On Oracle's Ubuntu image the
+     'ubuntu' user should have passwordless sudo — restore it from the Cloud
+     Console (Instance → Console connection), then re-run this script."
+fi
 
 . /etc/os-release 2>/dev/null || die "Cannot detect OS."
 case "${ID:-}" in
