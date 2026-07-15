@@ -16,8 +16,12 @@ WORKDIR /app
 RUN npm run build
 
 FROM node:22-alpine
-# node:alpine ships with a built-in 'node' user (uid 1000) — use it
-RUN mkdir -p /app && chown node:node /app
+# node:alpine ships with a built-in 'node' user (uid 1000) — use it.
+# Strip the bundled npm CLI: the runtime only runs the server, and npm's
+# vendored dependencies (picomatch, sigstore, …) otherwise trip container
+# vulnerability scanners with HIGH CVEs that don't apply to us.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+ && mkdir -p /app && chown node:node /app
 COPY --chown=node:node ./package.json package-lock.json /app/
 COPY --chown=node:node --from=production-dependencies-env /app/node_modules /app/node_modules
 COPY --chown=node:node --from=build-env /app/build /app/build
@@ -26,4 +30,5 @@ USER node
 ENV NODE_ENV=production \
     PORT=3000
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+# Run the server binary directly — no npm in the runtime image
+CMD ["node_modules/.bin/react-router-serve", "./build/server/index.js"]

@@ -51,9 +51,8 @@ jobs:
       - name: Install Semgrep
         run: pip install semgrep
 
-      # Single scan: SARIF for the Security tab AND the severity gate both
-      # read from the same run (previously Semgrep ran twice).
-      - name: Run Semgrep — collect all findings
+      # SARIF pass for the Security tab (never fails the job on its own).
+      - name: Run Semgrep — collect all findings (SARIF)
         run: |
           semgrep scan \
             --config p/owasp-top-ten \
@@ -77,15 +76,24 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
 
-      - name: Fail on HIGH / CRITICAL findings
+      # Gate on ERROR-severity findings using Semgrep's native exit code, which
+      # correctly resolves rule severity and honors `# nosemgrep` suppressions.
+      # (A SARIF/jq gate is unreliable: Semgrep leaves result.level unset and
+      # carries severity on the rule definition instead.)
+      - name: Fail on ERROR-severity findings
         run: |
-          ERRORS=$(jq '[.runs[].results[] | select(.level == "error")] | length' semgrep.sarif)
-          echo "error-level findings: $ERRORS"
-          if [ "$ERRORS" -gt 0 ]; then
-            jq -r '.runs[].results[] | select(.level == "error")
-              | "\(.ruleId): \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' semgrep.sarif
-            exit 1
-          fi
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/python \
+            --config p/fastapi \
+            --config p/jwt \
+            --config p/react \
+            --config p/typescript \
+            --severity ERROR \
+            --error \
+            --exclude .venv \
+            --exclude node_modules \
+            --exclude build
 
   # ── Job 3a: SCA — Python ─────────────────────────────────────────────────
   # Checks backend Python dependencies against known CVE databases.
