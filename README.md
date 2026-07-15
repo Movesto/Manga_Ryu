@@ -41,8 +41,11 @@ Manga_Ryu/
 │   └── ...
 ├── ml/                 # Genre tagger training pipeline (extract_data, train_tagger)
 ├── infrastructure/
-│   └── docker-compose.yml   # Suwayomi + PostgreSQL + backend
-└── .github/workflows/  # CI (lint/test/build) + security pipeline (SAST/SCA/Trivy)
+│   ├── docker-compose.yml        # Local dev: Suwayomi + PostgreSQL + backend
+│   ├── docker-compose.prod.yml   # Production: full stack + Cloudflare Tunnel
+│   ├── oracle-setup.sh           # One-command Oracle Cloud VM bootstrap
+│   └── ORACLE_DEPLOY.md          # Production deployment runbook
+└── .github/workflows/  # CI (lint/test/build) + security pipeline (SAST/SCA/Trivy/deploy)
 ```
 
 ---
@@ -149,3 +152,26 @@ npm run build
 
 Both run automatically in CI (`.github/workflows/ci.yml`), alongside the
 security pipeline (`security.yml`: Gitleaks, Semgrep, pip-audit, npm audit, Trivy).
+
+---
+
+## Production deployment (Oracle Cloud)
+
+The production stack runs on an Oracle Cloud Always Free VM behind a
+Cloudflare Tunnel — no inbound ports, TLS at the Cloudflare edge. One command
+on a fresh Ubuntu VM does the entire setup (swap, Docker, checkout, secrets,
+launch):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Movesto/Manga_Ryu/main/infrastructure/oracle-setup.sh | bash
+```
+
+- Images are built and Trivy-scanned by CI, pushed to GHCR
+  (`manga-ryu-backend`, `manga-ryu-frontend`), and pulled on the VM — the
+  scanned artifact is the deployed artifact.
+- Pushes to `main` auto-deploy via `docker compose pull && up -d` once all
+  security jobs pass (repo secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`).
+- Sized for a 1 GB `VM.Standard.E2.1.Micro`: per-service memory caps, bounded
+  JVM heap, 2 GB swap, and the ML tagger excluded from the image.
+
+Full runbook: [`infrastructure/ORACLE_DEPLOY.md`](infrastructure/ORACLE_DEPLOY.md)

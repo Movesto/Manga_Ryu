@@ -26,22 +26,22 @@ or iptables changes are needed at all.
 
 ## 2. Bootstrap the VM
 
-SSH in as `ubuntu`, then:
+Get the tunnel token first (step 3), SSH in as `ubuntu`, then:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Movesto/Manga_Ryu/main/infrastructure/oracle-setup.sh | bash
 ```
 
-This creates the 2 GB swap file, installs Docker + Compose, enables container
-log rotation, clones the repo to `~/manga-ryu`, and copies
-`infrastructure/.env.example` → `.env`.
+The script is idempotent (safe to re-run) and does everything: 2 GB swap,
+Docker + Compose, container log rotation, repo checkout to `~/manga-ryu`,
+`.env` with **auto-generated** `POSTGRES_PASSWORD` and `JWT_SECRET`, a prompt
+for the `TUNNEL_TOKEN`, then pulls the GHCR images, starts the stack, and
+waits for every service to report healthy.
 
-Log out and back in (docker group), then edit `~/manga-ryu/infrastructure/.env`:
+Unattended run (no prompt):
 
 ```bash
-POSTGRES_PASSWORD=   # openssl rand -base64 32
-JWT_SECRET=          # openssl rand -hex 32  (NEW value — old sessions are gone anyway)
-TUNNEL_TOKEN=        # see step 3
+TUNNEL_TOKEN=eyJh... bash oracle-setup.sh        # or --no-start to skip launch
 ```
 
 ## 3. Cloudflare Tunnel
@@ -59,9 +59,12 @@ tunnel on the Optiplex still owns that hostname, delete its route first.
 
 ## 4. First start
 
-Images must exist on GHCR first — they are pushed by the security pipeline on
-every push to `main` (make the two packages **public** in GitHub → Packages →
+The setup script already pulled and started the stack. Prerequisite: the
+images must exist on GHCR — they are pushed by the security pipeline on every
+push to `main` (make the two packages **public** in GitHub → Packages →
 package settings, or `docker login ghcr.io` on the VM with a read-only PAT).
+
+To start/inspect manually:
 
 ```bash
 cd ~/manga-ryu/infrastructure
