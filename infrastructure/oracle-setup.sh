@@ -215,6 +215,31 @@ else
   fi
 fi
 
+# Netdata Cloud (optional) — env override first, else an interactive prompt.
+if grep -q "^NETDATA_CLAIM_TOKEN=..*" "$ENV_FILE"; then
+  skip "NETDATA_CLAIM_TOKEN"
+elif [ -n "${NETDATA_CLAIM_TOKEN:-}" ]; then
+  set_env NETDATA_CLAIM_TOKEN "$NETDATA_CLAIM_TOKEN" && ok "NETDATA_CLAIM_TOKEN from environment"
+  [ -n "${NETDATA_CLAIM_ROOMS:-}" ] && set_env NETDATA_CLAIM_ROOMS "$NETDATA_CLAIM_ROOMS"
+else
+  echo ""
+  echo "  Optional: connect the Netdata agent to Netdata Cloud for dashboards."
+  echo "  app.netdata.cloud → your Space → Connect Nodes → Docker → copy the"
+  echo "  claim token and room id from the command shown."
+  prompt "  Paste NETDATA_CLAIM_TOKEN (or Enter to run Netdata locally only): "
+  if [ -n "$REPLY" ]; then
+    set_env NETDATA_CLAIM_TOKEN "$REPLY" && ok "NETDATA_CLAIM_TOKEN saved"
+    prompt "  Paste NETDATA_CLAIM_ROOMS (room id — Enter to skip): "
+    [ -n "$REPLY" ] && { set_env NETDATA_CLAIM_ROOMS "$REPLY" && ok "NETDATA_CLAIM_ROOMS saved"; }
+  else
+    skip "Netdata Cloud (agent will run standalone — set the token later to claim)"
+  fi
+fi
+
+echo ""
+echo "  ${DIM}Sentry error tracking is optional — add SENTRY_DSN (backend) and"
+echo "  SENTRY_DSN_FRONTEND to $ENV_FILE, then re-run the update command below.${RESET}"
+
 # ── 7. start the stack ────────────────────────────────────────────────────────
 step "Stack"
 
@@ -237,12 +262,15 @@ else
 
   # ── 8. wait for health ──────────────────────────────────────────────────────
   step "Waiting for services (up to $((HEALTH_TIMEOUT/60)) min — the JVM is slow on 1 vCPU)"
+  EXPECTED=$($COMPOSE config --services 2>/dev/null | wc -l)
   DEADLINE=$(( $(date +%s) + HEALTH_TIMEOUT ))
   while :; do
+    # Services with a healthcheck must report 'healthy'; those without one
+    # (cloudflared, netdata) only need to be running.
     UNHEALTHY=$($COMPOSE ps --format '{{.Name}} {{.Health}}' 2>/dev/null \
                  | awk '$2 != "healthy" && $2 != "" {print $1}')
     RUNNING=$($COMPOSE ps --status running -q | wc -l)
-    if [ -z "$UNHEALTHY" ] && [ "$RUNNING" -ge 5 ]; then
+    if [ -z "$UNHEALTHY" ] && [ "$RUNNING" -ge "$EXPECTED" ]; then
       break
     fi
     if [ "$(date +%s)" -ge "$DEADLINE" ]; then
@@ -269,6 +297,9 @@ cat <<EOF
       (several hours on this shape). Watch it:
         docker compose -f $APP_DIR/infrastructure/docker-compose.prod.yml logs -f backend
    4. For auto-deploys, set the repo secrets SSH_HOST / SSH_USER / SSH_PRIVATE_KEY.
+   5. Observability (optional): if you set a Netdata token, the node appears at
+      app.netdata.cloud within a minute. For Sentry, add the DSNs to .env and
+      re-run the update command below.
 
   Useful commands:
     status   docker compose -f $APP_DIR/infrastructure/docker-compose.prod.yml ps

@@ -127,6 +127,24 @@ This project doubles as a DevSecOps portfolio (see
 
 ---
 
+## Observability
+
+Both integrations are opt-in — set the relevant key in `.env` and they turn
+on; leave it blank and the stack runs identically without them.
+
+- **Sentry** — error tracking across the FastAPI backend (auto-instrumented)
+  and the React app (SSR + browser). Activates per side via `SENTRY_DSN` /
+  `SENTRY_DSN_FRONTEND`; releases are tagged with the deployed commit.
+- **Netdata** — a lean agent (`infrastructure/netdata/`) streaming host and
+  per-container metrics to Netdata Cloud, tuned to stay small on the 1 GB VM
+  (ML/eBPF collectors off, RAM-only local history). Claimed with
+  `NETDATA_CLAIM_TOKEN`; runs standalone if unset.
+
+See [`infrastructure/ORACLE_DEPLOY.md`](infrastructure/ORACLE_DEPLOY.md#6-observability-sentry--netdata)
+for setup.
+
+---
+
 ## ML genre tagger
 
 Sources often ship manga with missing or junk genre tags. The `ml/` pipeline

@@ -8,7 +8,13 @@ import { isbot } from "isbot";
 import type { RenderToPipeableStreamOptions } from "react-dom/server";
 import { renderToPipeableStream } from "react-dom/server";
 
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+
 import { NonceContext } from "./lib/nonce";
+import { initSentryServer, sentryIngestOrigin, Sentry } from "./lib/sentry.server";
+
+// Start Sentry (no-op unless SENTRY_DSN_FRONTEND is set) before anything runs.
+initSentryServer();
 
 export const streamTimeout = 5_000;
 
@@ -16,17 +22,33 @@ export const streamTimeout = 5_000;
 // injected inline scripts are blocked without needing 'unsafe-inline'.
 // Style 'unsafe-inline' stays because React style={{...}} props require it.
 function contentSecurityPolicy(nonce: string): string {
+  // When Sentry is enabled the browser SDK POSTs errors to its ingest host,
+  // which must be allowed by connect-src or the reports are CSP-blocked.
+  const ingest = sentryIngestOrigin();
+  const connectSrc = ingest ? `connect-src 'self' ${ingest}; ` : "connect-src 'self'; ";
   return (
     "default-src 'self'; " +
     `script-src 'self' 'nonce-${nonce}'; ` +
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com; " +
     "img-src 'self' data: blob: https:; " +
-    "connect-src 'self'; " +
+    connectSrc +
     "frame-ancestors 'none'; " +
     "object-src 'none'; " +
     "base-uri 'self'"
   );
+}
+
+// React Router calls this for every server-side loader/action/render error.
+// Skip aborted requests (client navigated away) — those aren't real errors.
+export function handleError(
+  error: unknown,
+  { request }: LoaderFunctionArgs | ActionFunctionArgs,
+) {
+  if (!request.signal.aborted) {
+    Sentry.captureException(error);
+    console.error(error);
+  }
 }
 
 export default function handleRequest(

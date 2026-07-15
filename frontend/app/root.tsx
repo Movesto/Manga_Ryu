@@ -17,8 +17,9 @@ import Navbar from "./components/Navbar";
 import { MangaRyuLogo, SITE_NAME } from "./components/Logo";
 import { getSession } from "./lib/auth.server";
 import { generateCsrfToken, getCsrfToken, csrfCookieHeader } from "./lib/csrf.server";
+import { sentryClientConfig } from "./lib/sentry.server";
 import { useNonce } from "./lib/nonce";
-import { data } from "react-router";
+import { data, useRouteLoaderData } from "react-router";
 
 export const links: Route.LinksFunction = () => [
   {
@@ -86,11 +87,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const responseHeaders = new Headers();
   responseHeaders.append("Set-Cookie", csrfCookieHeader(csrf));
   for (const cookie of session.setCookies) responseHeaders.append("Set-Cookie", cookie);
-  return data({ user: session.user, csrf }, { headers: responseHeaders });
+  // Sentry DSN is public/safe to expose; the browser SDK reads it on the client
+  return data(
+    { user: session.user, csrf, sentry: sentryClientConfig() },
+    { headers: responseHeaders },
+  );
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const nonce = useNonce();
+  const rootData = useRouteLoaderData<typeof loader>("root");
+  const sentry = rootData?.sentry;
   return (
     <html lang="en">
       <head>
@@ -101,6 +108,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        {sentry && (
+          // Hand the browser SDK its config before hydration. Server-controlled
+          // value, nonce-tagged so it satisfies the strict CSP.
+          <script
+            nonce={nonce}
+            dangerouslySetInnerHTML={{ __html: `window.__SENTRY_CFG__=${JSON.stringify(sentry)}` }}
+          />
+        )}
         <ScrollRestoration nonce={nonce} />
         <Scripts nonce={nonce} />
       </body>

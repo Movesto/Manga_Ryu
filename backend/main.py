@@ -19,6 +19,21 @@ _handler.setFormatter(_jl.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(me
 logging.root.handlers = [_handler]
 logging.root.setLevel(logging.INFO)
 
+# ── Sentry error tracking (opt-in — activates only when SENTRY_DSN is set) ─────
+# Init before the app is created so FastAPI/Starlette are auto-instrumented.
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+        release=os.getenv("SENTRY_RELEASE") or os.getenv("IMAGE_TAG"),
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        send_default_pii=False,  # don't ship request bodies / auth headers
+    )
+    logging.getLogger(__name__).info("Sentry error tracking enabled")
+
 from contextlib import asynccontextmanager
 
 import requests as _requests

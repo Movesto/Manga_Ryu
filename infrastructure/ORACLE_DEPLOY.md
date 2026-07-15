@@ -105,7 +105,39 @@ The pipeline now pushes the **scanned** images to GHCR
 (`manga-ryu-backend` / `manga-ryu-frontend`) and the deploy job runs
 `docker compose pull && up -d` on the VM.
 
-## 6. Decommission the Optiplex
+## 6. Observability (Sentry + Netdata)
+
+Both are opt-in and off until you add keys to `.env`.
+
+**Sentry** (error tracking): create one or two projects on sentry.io, then set
+in `.env`:
+
+```bash
+SENTRY_DSN=            # backend / FastAPI project DSN
+SENTRY_DSN_FRONTEND=   # frontend project DSN (reaches the browser; DSNs are public)
+```
+
+The backend SDK auto-instruments FastAPI; the frontend reports both SSR
+(node) and browser errors. The browser SDK chunk is lazy-loaded only when a
+DSN is present, and the CSP's `connect-src` automatically allows the Sentry
+ingest host. Apply with the update command (bottom of this doc).
+
+**Netdata** (metrics): the `oracle-setup.sh` script prompts for the claim
+token. To do it later, set in `.env`:
+
+```bash
+NETDATA_CLAIM_TOKEN=   # app.netdata.cloud → Space → Connect Nodes → Docker
+NETDATA_CLAIM_ROOMS=   # room id from the same command
+```
+
+then `docker compose … up -d netdata`. The node shows up in Netdata Cloud
+within a minute. Without a token the agent still runs standalone — reach its
+dashboard with `ssh -L 19999:localhost:19999 ubuntu@<vm-ip>` after temporarily
+exposing the port, or add a tunnel hostname. The agent is tuned lean in
+`infrastructure/netdata/netdata.conf` (ML/eBPF/apps collectors off, RAM-only
+history) because Netdata Cloud holds the long-term data.
+
+## 7. Decommission the Optiplex
 
 Once mangaryu.org serves from the VM:
 
@@ -122,8 +154,13 @@ Once mangaryu.org serves from the VM:
 | backend | 256 MB | no torch (INSTALL_ML=false image) |
 | frontend | 192 MB | node SSR |
 | postgres | 160 MB | `shared_buffers=32MB`, `max_connections=40` |
+| netdata | 150 MB | lean agent, ML/eBPF off, RAM-only history |
 | cloudflared | 64 MB | |
-| **total caps** | ~1.2 GB | vs 1 GB RAM + 2 GB swap — peaks spill to swap |
+| **total caps** | ~1.3 GB | vs 1 GB RAM + 2 GB swap — idle set fits RAM, peaks spill to swap |
+
+Netdata is the one genuinely optional tenant here. If the box feels starved,
+either drop its `mem_limit`/history further or comment the service out — the
+rest of the stack doesn't depend on it.
 
 **Do not** mount an ML model or set `TAGGER_MODEL_DIR` on this shape: the
 GHCR backend image has no torch, and installing it would not fit anyway. Run
