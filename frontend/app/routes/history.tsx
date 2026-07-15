@@ -1,25 +1,28 @@
 import { Link, useLoaderData, useFetcher, redirect, useRouteLoaderData } from "react-router";
-import { getUser, getAccessToken } from "../lib/auth.server";
+import { data } from "react-router";
+import { getSession, sessionHeaders } from "../lib/auth.server";
 import { verifyCsrf } from "../lib/csrf.server";
 import { API, imgUrl } from "../lib/config";
 import { relativeTime, chNum } from "../lib/utils";
 
 export async function loader({ request }: { request: Request }) {
-  const user = await getUser(request);
+  const session = await getSession(request);
+  const { user, token } = session;
   if (!user) throw redirect("/signin?next=/history");
 
-  const token = getAccessToken(request)!;
   const res   = await fetch(`${API}/api/history`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = res.ok ? await res.json() : { history: [] };
-  return { history: data.history ?? [], user };
+  const payload = res.ok ? await res.json() : { history: [] };
+  return data(
+    { history: payload.history ?? [], user },
+    { headers: sessionHeaders(session) },
+  );
 }
 
 export async function action({ request }: { request: Request }) {
-  const user  = await getUser(request);
+  const { user, token } = await getSession(request);
   if (!user) return { ok: false };
-  const token = getAccessToken(request)!;
   const form  = await request.formData();
 
   const submitted = form.get("csrf_token") as string | null;
@@ -110,7 +113,7 @@ export default function History() {
                     Last read: Ch. {h.lastChapterNumber != null ? chNum(h.lastChapterNumber) : "?"}
                   </p>
                   <p className="text-xs text-zinc-600 mt-0.5">
-                    {relativeTime(h.readAt ? new Date(h.readAt).getTime() / 1000 : 0)}
+                    {relativeTime(h.readAt ? new Date(h.readAt).getTime() : 0)}
                   </p>
                 </div>
 

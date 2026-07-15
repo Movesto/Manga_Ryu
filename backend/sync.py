@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import suwayomi
 import database
+import helpers
 import tagger
 from psycopg2.extras import execute_values
 
@@ -312,13 +313,7 @@ def run_sync():
         _running = True
 
     try:
-        sources = suwayomi.get_sources()
-        active  = [
-            s for s in sources
-            if isinstance(s, dict)
-            and str(s.get("id")) != "0"
-            and s.get("name") != "Local source"
-        ]
+        active = helpers.active_sources()
         print(f"[sync] Starting sync for {len(active)} sources …")
 
         with ThreadPoolExecutor(max_workers=5) as ex:

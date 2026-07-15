@@ -18,6 +18,25 @@ updates:
     open-pull-requests-limit: 5
     labels: [dependencies, javascript]
 
+  # Docker base images — monthly
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker]
+
+  # ML training deps — weekly, alongside the backend
+  - package-ecosystem: pip
+    directory: /ml
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, python]
+
   # GitHub Actions — monthly (lower churn)
   - package-ecosystem: github-actions
     directory: /

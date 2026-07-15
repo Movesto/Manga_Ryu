@@ -65,7 +65,6 @@ def predict(title: str, description: str, threshold: float = _THRESHOLD) -> list
         return []
 
     try:
-        import numpy as np
 
         emb   = _embedder.encode([text], normalize_embeddings=True)
         proba = _clf.predict_proba(emb)[0]

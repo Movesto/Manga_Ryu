@@ -14,7 +14,6 @@ function SearchOverlay({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const fetcher = useFetcher<{ mangaList: any[]; query: string }>();
   const navigate = useNavigate();
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (query.trim().length < 3) return;
@@ -44,7 +43,6 @@ function SearchOverlay({ onClose }: { onClose: () => void }) {
             <SearchIcon size={18} />
           </span>
           <input
-            ref={inputRef}
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}

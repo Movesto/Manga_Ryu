@@ -14,26 +14,25 @@ import base64
 import io
 import json
 import logging
-import os
-import re
 import threading
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from ratelimit import limiter
+
+from auth import CurrentUser
 
 from routes.download import (
     _gql, _fetch_pages, _safe_filename,
     _jobs, _jobs_lock, _set_job, _cleanup_old_jobs,
-    router as _dl_router,   # we register routes on the SAME router
-    GQL_URL, SUWAYOMI,
+    SUWAYOMI,
 )
 
-import time, uuid
-from fastapi import BackgroundTasks
-from fastapi.responses import FileResponse
+import time
+import uuid
 
-router = _dl_router          # re-export; html routes live on the same router
+router = APIRouter(tags=["html-reader"])  # shares the job store with download.py, not its router
 log   = logging.getLogger(__name__)
 
 _WEBTOON_RATIO = 2.0
@@ -375,7 +374,8 @@ class HtmlRequest(BaseModel):
 
 
 @router.post("/api/manga/{manga_id}/download/html")
-def start_html_download(manga_id: str, body: HtmlRequest):
+@limiter.limit("5/minute")
+def start_html_download(request: Request, user: CurrentUser, manga_id: str, body: HtmlRequest):
     """Start an HTML reader export job. Returns {job_id} immediately."""
     if not body.chapter_ids:
         raise HTTPException(400, "chapter_ids must not be empty")

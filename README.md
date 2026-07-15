@@ -19,33 +19,38 @@ A self-hosted manga reader that aggregates content from dozens of sources via a 
 ## Project structure
 
 ```
-manga_reader/
+Manga_Ryu/
 ├── backend/            # FastAPI application
-│   ├── routes/         # API route handlers (home, catalog, manga, bookmarks)
+│   ├── routes/         # API route handlers (home, catalog, manga, download, html_reader)
+│   ├── tests/          # pytest suite
 │   ├── auth.py         # JWT auth, user management
-│   ├── database.py     # PostgreSQL connection pool
-│   ├── editors_choice.py
-│   ├── helpers.py
+│   ├── audit.py        # Security audit logging
+│   ├── database.py     # PostgreSQL connection pool + schema
+│   ├── bookmarks.py / history.py / ratings.py / editors_choice.py
+│   ├── ratelimit.py    # SlowAPI rate limiter
 │   ├── suwayomi.py     # Suwayomi GraphQL client
 │   ├── sync.py         # Background sync from Suwayomi → Postgres
+│   ├── tagger.py       # ML genre tagger (inference)
 │   ├── cache.py        # In-memory TTL cache
 │   └── main.py         # App entry point
 ├── frontend/           # React Router v7 SSR app
 │   ├── app/
-│   │   ├── routes/     # File-based routes
+│   │   ├── routes/     # File-based routes (incl. /api and /media proxies)
 │   │   ├── components/ # Shared UI components (Navbar, MangaCard, icons)
-│   │   └── lib/        # Shared utilities (config, utils, auth.server)
+│   │   └── lib/        # Shared utilities (config, utils, auth.server, csrf.server)
 │   └── ...
-└── infrastructure/
-    └── docker-compose.yml   # Suwayomi + PostgreSQL
+├── ml/                 # Genre tagger training pipeline (extract_data, train_tagger)
+├── infrastructure/
+│   └── docker-compose.yml   # Suwayomi + PostgreSQL + backend
+└── .github/workflows/  # CI (lint/test/build) + security pipeline (SAST/SCA/Trivy)
 ```
 
 ---
 
 ## Prerequisites
 
-- Node.js 20+
-- Python 3.11+
+- Node.js 22+
+- Python 3.12+
 - Docker & Docker Compose
 - PostgreSQL 16 (or use Docker)
 
@@ -70,10 +75,13 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+# Optional — only needed to run the ML genre tagger locally:
+# pip install -r requirements-ml.txt
 
-# Optional: set env vars (defaults work for local dev)
+# REQUIRED — the server refuses to start without it:
+export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+# Optional (default shown):
 export DATABASE_URL="postgresql://manga:manga@localhost:5432/manga_db"
-export JWT_SECRET="your-secret-key"
 
 uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -96,10 +104,17 @@ App is available at `http://localhost:5173`.
 
 | Variable | Default | Description |
 |---|---|---|
+| `JWT_SECRET` | **required** | Secret key for signing JWTs — the server **refuses to start** without it. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `DATABASE_URL` | `postgresql://manga:manga@localhost:5432/manga_db` | PostgreSQL connection string |
-| `JWT_SECRET` | random (generated at startup) | Secret key for signing JWTs — set a fixed value in production |
+| `SUWAYOMI_URL` | `http://127.0.0.1:4567` | Base URL of the Suwayomi server |
+| `ACCESS_TOKEN_MINUTES` | `30` | Access-token lifetime (kept short; the frontend renews sessions via the refresh token) |
+| `REFRESH_TOKEN_DAYS` | `30` | Refresh-token lifetime |
+| `POSTGRES_PASSWORD` | **required** (Docker) | Database password, injected by docker-compose |
+| `KCC_PATH` | empty (disabled) | Absolute path to the `kcc-c2e` binary for Kindle EPUB downloads |
+| `TAGGER_MODEL_DIR` | `../ml/model` | Directory with the trained genre-tagger model |
+| `TAGGER_THRESHOLD` | `0.30` | Tagger prediction confidence cutoff (0–1) |
 
-> **Note:** If `JWT_SECRET` is not set, a random key is generated each time the server starts, which will invalidate all existing sessions on restart.
+See `backend/.env.example` and `infrastructure/.env.example` for copy-paste templates.
 
 ---
 
@@ -112,3 +127,25 @@ App is available at `http://localhost:5173`.
 - Auto-advancing sliders (Popular, Editor's Pick)
 - Chapter reader with configurable width modes
 - Admin panel for curating featured picks
+
+---
+
+## Development
+
+```bash
+# Backend — lint and tests
+cd backend
+pip install -r requirements-dev.txt
+ruff check .
+pytest tests/
+
+# Frontend — lint, typecheck, tests, build
+cd frontend
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+Both run automatically in CI (`.github/workflows/ci.yml`), alongside the
+security pipeline (`security.yml`: Gitleaks, Semgrep, pip-audit, npm audit, Trivy).

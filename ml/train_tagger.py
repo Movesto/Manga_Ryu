@@ -14,6 +14,10 @@ Output:
 After training, copy the entire ml/model/ directory to the Optiplex.
 """
 import csv
+import hashlib
+import json
+import random
+from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
@@ -23,6 +27,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import MultiLabelBinarizer
+
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
 
 DATA      = Path(__file__).parent / "data.csv"
 MODEL_DIR = Path(__file__).parent / "model"
@@ -65,7 +73,7 @@ print(f"Classes ({len(mlb.classes_)}): {list(mlb.classes_)}")
 
 print("Training classifier…")
 clf = OneVsRestClassifier(
-    LogisticRegression(C=4.0, max_iter=1000, solver="lbfgs"),
+    LogisticRegression(C=4.0, max_iter=1000, solver="lbfgs", random_state=SEED),
     n_jobs=-1,
 )
 clf.fit(embeddings, Y)
@@ -85,5 +93,20 @@ print(f"Saved classifier  → {classifier_path}")
 embedder_path = MODEL_DIR / "embedder"
 embedder.save(str(embedder_path))
 print(f"Saved embedder    → {embedder_path}")
+
+# ── Persist training metadata for reproducibility ─────────────────────────────
+
+metrics = {
+    "trained_at":  datetime.now(timezone.utc).isoformat(),
+    "seed":        SEED,
+    "examples":    len(texts),
+    "classes":     list(mlb.classes_),
+    "data_sha256": hashlib.sha256(DATA.read_bytes()).hexdigest(),
+    "cv_f1_mean":  round(scores.mean(), 4),
+    "cv_f1_std":   round(scores.std(), 4),
+}
+metrics_path = MODEL_DIR / "metrics.json"
+metrics_path.write_text(json.dumps(metrics, indent=2))
+print(f"Saved metrics     → {metrics_path}")
 
 print("\nDone. Copy ml/model/ to the inference machine (Optiplex).")

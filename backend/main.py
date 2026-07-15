@@ -19,8 +19,10 @@ _handler.setFormatter(_jl.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(me
 logging.root.handlers = [_handler]
 logging.root.setLevel(logging.INFO)
 
+from contextlib import asynccontextmanager
+
 import requests as _requests
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -43,38 +45,11 @@ from routes import home, catalog, manga as manga_routes, download as download_ro
 
 _SUWAYOMI_URL = os.getenv("SUWAYOMI_URL", "http://127.0.0.1:4567")
 
-app = FastAPI(title="Manga Ryu API")
-
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://mangaryu.org", "http://localhost:3000", "http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
-)
-
 _scheduler = BackgroundScheduler()
 
-# ── Routers ───────────────────────────────────────────────────────────────────
 
-app.include_router(auth.router)
-app.include_router(bookmarks.router)
-app.include_router(editors_choice.router)
-app.include_router(history.router)
-app.include_router(home.router)
-app.include_router(catalog.router)
-app.include_router(manga_routes.router)
-app.include_router(download_routes.router)
-app.include_router(html_reader_routes.router)
-
-# ── Startup / shutdown ────────────────────────────────────────────────────────
-
-@app.on_event("startup")
-def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     database.init_pool()
     database.create_schema()
     tagger.load()
@@ -94,12 +69,35 @@ def on_startup():
     _scheduler.add_job(sync.refresh_bookmarked_chapters, "interval", hours=12, id="chapter_refresh")
     _scheduler.add_job(ratings.fetch_and_store, "interval", weeks=1, id="ratings")
     _scheduler.start()
-
-
-@app.on_event("shutdown")
-def on_shutdown():
+    yield
     _scheduler.shutdown(wait=False)
 
+
+app = FastAPI(title="Manga Ryu API", lifespan=lifespan)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://mangaryu.org", "http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+)
+
+# ── Routers ───────────────────────────────────────────────────────────────────
+
+app.include_router(auth.router)
+app.include_router(bookmarks.router)
+app.include_router(editors_choice.router)
+app.include_router(history.router)
+app.include_router(home.router)
+app.include_router(catalog.router)
+app.include_router(manga_routes.router)
+app.include_router(download_routes.router)
+app.include_router(html_reader_routes.router)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

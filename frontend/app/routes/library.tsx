@@ -1,20 +1,21 @@
 import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/library";
-import { getUser, getAccessToken } from "../lib/auth.server";
+import { data } from "react-router";
+import { getSession, sessionHeaders } from "../lib/auth.server";
 import { API, imgUrl } from "../lib/config";
 import { TrashIcon, BookmarkIcon } from "../components/icons";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const user = await getUser(request);
+  const session = await getSession(request);
+  const { user, token } = session;
   if (!user) throw redirect("/signin?next=/library");
 
-  const token = getAccessToken(request)!;
   const res = await fetch(`${API}/api/bookmarks`, {
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => null);
 
   const bookmarks = res?.ok ? await res.json() : [];
-  return { user, bookmarks };
+  return data({ user, bookmarks }, { headers: sessionHeaders(session) });
 }
 
 // ── bookmark card ─────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ function BookmarkCard({ manga, onRemove }: { manga: any; onRemove: () => void })
 // ── page ──────────────────────────────────────────────────────────────────────
 
 export default function Library() {
-  const { user, bookmarks: initial } = useLoaderData<typeof loader>();
+  const { bookmarks: initial } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
 
   const removing = fetcher.state !== "idle" ? fetcher.formData?.get("manga_id") : null;

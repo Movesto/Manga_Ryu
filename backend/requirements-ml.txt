@@ -1,0 +1,7 @@
+# Inference dependencies for the ML genre tagger (tagger.py).
+# Keep these in sync with the versions used to train the model
+# (ml/requirements.txt) — a mismatched scikit-learn can fail to
+# unpickle classifier.joblib.
+joblib>=1.4.0
+scikit-learn>=1.5.0
+sentence-transformers>=3.0.0

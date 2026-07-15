@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
 
 export function generateCsrfToken(): string {
   return randomBytes(32).toString("hex");
@@ -17,5 +17,7 @@ export function csrfCookieHeader(token: string): string {
 export function verifyCsrf(request: Request, submitted: string | null): boolean {
   const cookieToken = getCsrfToken(request);
   if (!cookieToken || !submitted) return false;
-  return cookieToken === submitted;
+  const a = Buffer.from(cookieToken);
+  const b = Buffer.from(submitted);
+  return a.length === b.length && timingSafeEqual(a, b);
 }

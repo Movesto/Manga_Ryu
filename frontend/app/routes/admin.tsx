@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { redirect, useLoaderData, useFetcher, Link, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/admin";
-import { getUser, getAccessToken } from "../lib/auth.server";
+import { data } from "react-router";
+import { getSession, sessionHeaders } from "../lib/auth.server";
 import { verifyCsrf } from "../lib/csrf.server";
 import { API, imgUrl } from "../lib/config";
 import { SearchIcon, TrashIcon, PlusIcon, ShieldIcon } from "../components/icons";
@@ -9,13 +10,17 @@ import { SearchIcon, TrashIcon, PlusIcon, ShieldIcon } from "../components/icons
 // ── loader ────────────────────────────────────────────────────────────────────
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const user = await getUser(request);
+  const session = await getSession(request);
+  const { user } = session;
   if (!user) throw redirect("/signin?next=/admin");
   if (!user.is_admin) throw redirect("/");
 
   const res  = await fetch(`${API}/api/editors-choice`);
-  const data = await res.json().catch(() => ({ mangaList: [] }));
-  return { user, picks: (data.mangaList ?? []) as any[] };
+  const picksData = await res.json().catch(() => ({ mangaList: [] }));
+  return data(
+    { user, picks: (picksData.mangaList ?? []) as any[] },
+    { headers: sessionHeaders(session) },
+  );
 }
 
 // ── action ────────────────────────────────────────────────────────────────────
@@ -27,7 +32,7 @@ export async function action({ request }: Route.ActionArgs) {
     throw new Response("Invalid CSRF token", { status: 403 });
   }
 
-  const token = getAccessToken(request);
+  const { token } = await getSession(request);
   if (!token) return { error: "Not authenticated" };
 
   const intent  = form.get("intent") as string;

@@ -8,9 +8,9 @@ WORKDIR /build
 # Create the venv that will be copied into the runtime stage
 RUN python -m venv /build/.venv
 
-COPY requirements.txt .
+COPY requirements.txt requirements-ml.txt ./
 RUN .venv/bin/pip install --no-cache-dir --upgrade pip \
- && .venv/bin/pip install --no-cache-dir -r requirements.txt
+ && .venv/bin/pip install --no-cache-dir -r requirements.txt -r requirements-ml.txt
 
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
@@ -33,8 +33,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     # Override at runtime with -e SUWAYOMI_URL=http://suwayomi:4567
     SUWAYOMI_URL="http://127.0.0.1:4567" \
-    # Override with -e KCC_PATH=/path/to/kcc-c2e to enable Kindle downloads
-    KCC_PATH="/app/.venv/bin/kcc-c2e"
+    # Set -e KCC_PATH=/path/to/kcc-c2e to enable Kindle downloads
+    # (empty = the endpoint returns 503 instead of failing mid-job)
+    KCC_PATH=""
 
 USER appuser
 

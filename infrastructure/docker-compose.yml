@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   suwayomi:
     image: ghcr.io/suwayomi/suwayomi-server:latest
@@ -50,9 +48,13 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-manga}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-manga_db}
       SUWAYOMI_URL: http://suwayomi:4567
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-10080}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-30}
       REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-30}
       KCC_PATH: ${KCC_PATH:-}
+      TAGGER_MODEL_DIR: /app/ml-model
+    volumes:
+      # Trained model from ml/train_tagger.py; without it auto-tagging is disabled
+      - ../ml/model:/app/ml-model:ro
     expose:
       - "8000"
     networks:

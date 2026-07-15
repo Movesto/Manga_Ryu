@@ -1,10 +1,10 @@
 import type { Route } from "./+types/bookmark";
 import { API } from "../lib/config";
-import { getAccessToken } from "../lib/auth.server";
+import { getSession } from "../lib/auth.server";
 import { verifyCsrf } from "../lib/csrf.server";
 
 export async function action({ request }: Route.ActionArgs) {
-  const token = getAccessToken(request);
+  const { token } = await getSession(request);
   if (!token) return { bookmarked: false, error: "Not authenticated" };
 
   const form    = await request.formData();

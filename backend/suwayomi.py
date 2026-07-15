@@ -19,7 +19,7 @@ def safe_fetch(endpoint):
         else:
             return {
                 "success": False, 
-                "error": f"Endpoint returned HTML or text instead of JSON.",
+                "error": "Endpoint returned HTML or text instead of JSON.",
                 "status_code": response.status_code,
                 "url": url
             }

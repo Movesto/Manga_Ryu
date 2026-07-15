@@ -1,7 +1,6 @@
 import logging
 import os
 import contextlib
-import psycopg2
 from psycopg2 import pool as pg_pool
 
 log = logging.getLogger(__name__)
@@ -24,6 +23,13 @@ def get_conn():
     conn = _pool.getconn()
     try:
         yield conn
+    except Exception:
+        # Roll back so an aborted transaction isn't returned to the pool
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
     finally:
         _pool.putconn(conn)
 
@@ -74,6 +80,8 @@ def create_schema():
                     ADD COLUMN IF NOT EXISTS chapters_updated_at TIMESTAMPTZ;
                 ALTER TABLE manga
                     ADD COLUMN IF NOT EXISTS ai_tagged BOOLEAN DEFAULT FALSE;
+                ALTER TABLE manga
+                    ADD COLUMN IF NOT EXISTS rating REAL;
                 CREATE INDEX IF NOT EXISTS idx_manga_chapters_updated
                     ON manga(chapters_updated_at);
                 CREATE INDEX IF NOT EXISTS idx_manga_ai_tagged

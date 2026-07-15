@@ -7,6 +7,7 @@ from ratelimit import limiter
 
 import cache
 import database
+import helpers
 import suwayomi
 import sync as _sync
 
@@ -37,16 +38,9 @@ def _db_search(q: str, page: int = 1, page_size: int = 20) -> list:
 def _live_search(q: str) -> list:
     """Search all Suwayomi sources in parallel; upsert results into DB."""
     try:
-        sources = suwayomi.get_sources()
+        active = helpers.active_sources()
     except Exception:
         return []
-
-    active = [
-        s for s in sources
-        if isinstance(s, dict)
-        and str(s.get("id")) != "0"
-        and s.get("name") != "Local source"
-    ]
 
     results: list = []
     seen_ids: set = set()

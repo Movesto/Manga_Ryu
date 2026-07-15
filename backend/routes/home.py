@@ -4,6 +4,8 @@ Home-page section endpoints: popular, latest, completed, new releases.
 - All sections deduplicate by title so the same manga never appears twice.
 - Only English-only sources with working thumbnails and chapters are served.
 """
+import os
+
 import requests
 from fastapi import APIRouter
 
@@ -12,7 +14,7 @@ import database
 
 router = APIRouter(tags=["home"])
 
-GQL = "http://127.0.0.1:4567/api/graphql"
+GQL = f"{os.getenv('SUWAYOMI_URL', 'http://127.0.0.1:4567')}/api/graphql"
 
 
 def _rows_to_manga(rows) -> list[dict]:

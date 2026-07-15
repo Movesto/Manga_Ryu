@@ -23,12 +23,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse
 from ratelimit import limiter
 
+from auth import CurrentUser
+
 router = APIRouter(tags=["download"])
 log = logging.getLogger(__name__)
 
 SUWAYOMI = os.getenv("SUWAYOMI_URL", "http://127.0.0.1:4567")
 GQL_URL  = f"{SUWAYOMI}/api/graphql"
-KCC      = os.getenv("KCC_PATH", "/home/cade/.local/bin/kcc-c2e")
+KCC      = os.getenv("KCC_PATH", "")  # empty → Kindle conversion disabled
 
 _VALID_PROFILES = {
     "K1", "K2", "KDX", "K34", "K57", "KPW", "KV", "KPW34", "K810",
@@ -334,8 +336,10 @@ def _run_conversion(job_id: str, manga_id: str, chapter_id: str, profile: str) -
 
 @router.post("/api/manga/{manga_id}/chapter/{chapter_id}/download")
 @limiter.limit("5/minute")
-def start_download(request: Request, manga_id: str, chapter_id: str, profile: str = "KPW5"):
+def start_download(request: Request, user: CurrentUser, manga_id: str, chapter_id: str, profile: str = "KPW5"):
     """Start a background Kindle conversion job. Returns {job_id} immediately."""
+    if not KCC:
+        raise HTTPException(503, "Kindle conversion is not configured on this server")
     if profile not in _VALID_PROFILES:
         raise HTTPException(400, f"Invalid profile '{profile}'")
 
@@ -361,7 +365,7 @@ def start_download(request: Request, manga_id: str, chapter_id: str, profile: st
 
 @router.post("/api/manga/{manga_id}/download/pdf")
 @limiter.limit("5/minute")
-def start_pdf_download(request: Request, manga_id: str, body: dict):
+def start_pdf_download(request: Request, user: CurrentUser, manga_id: str, body: dict):
     """Start a PDF export job for one or more chapters. Returns {job_id}."""
     chapter_ids = body.get("chapter_ids", [])
     if not chapter_ids:

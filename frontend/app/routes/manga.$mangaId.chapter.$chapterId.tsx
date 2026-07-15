@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useLoaderData, Link, useNavigate, useRevalidator } from "react-router";
+import { useLoaderData, Link, useNavigate, useRevalidator, data } from "react-router";
 import { API } from "../lib/config";
-import { getAccessToken } from "../lib/auth.server";
+import { getSession, sessionHeaders } from "../lib/auth.server";
 import { chNum } from "../lib/utils";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronIcon, WidthIcon } from "../components/icons";
 
 export async function loader({ params, request }: { params: Record<string, string>; request: Request }) {
   const { mangaId, chapterId } = params;
-  const token = getAccessToken(request);
+  const session = await getSession(request);
+  const token = session.token;
 
   const [pagesRes, chaptersRes, mangaRes] = await Promise.all([
     fetch(`${API}/api/manga/${mangaId}/chapter/${chapterId}`),
@@ -53,7 +54,10 @@ export async function loader({ params, request }: { params: Record<string, strin
     }).catch(() => {});
   }
 
-  return { pages, manga, currentChapter, nextChapter, prevChapter, mangaId, chapterId };
+  return data(
+    { pages, manga, currentChapter, nextChapter, prevChapter, mangaId, chapterId },
+    { headers: sessionHeaders(session) },
+  );
 }
 
 // ── width modes ───────────────────────────────────────────────────────────────
@@ -76,7 +80,7 @@ const WIDTH_LABEL: Record<WidthMode, string> = {
 // ── page ─────────────────────────────────────────────────────────────────────
 
 export default function ChapterReader() {
-  const { pages, manga, currentChapter, nextChapter, prevChapter, mangaId, chapterId } =
+  const { pages, manga, currentChapter, nextChapter, prevChapter, mangaId } =
     useLoaderData<typeof loader>();
 
   const navigate = useNavigate();

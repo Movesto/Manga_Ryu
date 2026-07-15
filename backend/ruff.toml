@@ -1,0 +1,17 @@
+line-length = 120
+target-version = "py312"
+
+[lint]
+# Defaults (E4/E7/E9 + F) plus import sorting and common bug patterns
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = [
+    "E731",  # lambda assignment is fine
+    "E701",  # compact `if x: return y` style used throughout
+    "B008",  # FastAPI Depends() in defaults is the framework idiom
+    "B905",  # zip(strict=) churn not worth it
+]
+
+[lint.per-file-ignores]
+# main.py loads .env and configures logging before any app imports
+"main.py" = ["E402"]
+"tests/*" = ["F401"]

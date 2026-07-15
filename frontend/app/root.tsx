@@ -15,8 +15,9 @@ import type { Route } from "./+types/root";
 import "./app.css";
 import Navbar from "./components/Navbar";
 import { MangaRyuLogo, SITE_NAME } from "./components/Logo";
-import { getUser } from "./lib/auth.server";
+import { getSession } from "./lib/auth.server";
 import { generateCsrfToken, getCsrfToken, csrfCookieHeader } from "./lib/csrf.server";
+import { useNonce } from "./lib/nonce";
 import { data } from "react-router";
 
 export const links: Route.LinksFunction = () => [
@@ -53,33 +54,21 @@ export function meta() {
   ];
 }
 
-// Security headers applied to every HTML response
+// Security headers applied to every HTML response.
+// The Content-Security-Policy is set in entry.server.tsx, where the
+// per-request script nonce is generated.
 const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
   "X-Content-Type-Options":    "nosniff",
   "X-Frame-Options":           "DENY",
   "Referrer-Policy":           "strict-origin-when-cross-origin",
   "Permissions-Policy":        "camera=(), microphone=(), geolocation=()",
-  // TODO: replace 'unsafe-inline' in script-src with per-request nonces.
-  // Requires creating app/entry.server.tsx, generating a nonce there,
-  // threading it through loadContext → root loader → headers(), and
-  // passing it to <Scripts nonce={nonce} />.  Style 'unsafe-inline' is
-  // kept because React's style={{...}} props require it.
-  "Content-Security-Policy":
-    "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline'; " +
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src 'self' https://fonts.gstatic.com; " +
-    "img-src 'self' data: blob: https:; " +
-    "connect-src 'self'; " +
-    "frame-ancestors 'none'; " +
-    "object-src 'none';",
 };
 
 export function headers({ loaderHeaders }: { loaderHeaders: Headers }) {
-  const result: Record<string, string> = { ...SECURITY_HEADERS };
-  const setCookie = loaderHeaders.get("Set-Cookie");
-  if (setCookie) result["Set-Cookie"] = setCookie;
+  const result = new Headers();
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) result.set(k, v);
+  for (const cookie of loaderHeaders.getSetCookie()) result.append("Set-Cookie", cookie);
   return result;
 }
 
@@ -92,12 +81,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  const user = await getUser(request);
+  const session = await getSession(request);
   const csrf = getCsrfToken(request) ?? generateCsrfToken();
-  return data({ user, csrf }, { headers: { "Set-Cookie": csrfCookieHeader(csrf) } });
+  const responseHeaders = new Headers();
+  responseHeaders.append("Set-Cookie", csrfCookieHeader(csrf));
+  for (const cookie of session.setCookies) responseHeaders.append("Set-Cookie", cookie);
+  return data({ user: session.user, csrf }, { headers: responseHeaders });
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const nonce = useNonce();
   return (
     <html lang="en">
       <head>
@@ -108,8 +101,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
-        <ScrollRestoration />
-        <Scripts />
+        <ScrollRestoration nonce={nonce} />
+        <Scripts nonce={nonce} />
       </body>
     </html>
   );

@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLoaderData, Link, useFetcher, useNavigate, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/manga.$mangaId";
-import { getUser, getAccessToken } from "../lib/auth.server";
+import { data } from "react-router";
+import { getSession, sessionHeaders } from "../lib/auth.server";
 import { API, imgUrl } from "../lib/config";
 import { chNum, relativeTime } from "../lib/utils";
 import { BookmarkIcon, PlayIcon, ArrowLeftIcon, ChevronIcon, DownloadIcon } from "../components/icons";
@@ -15,7 +16,8 @@ export function meta({ data }: Route.MetaArgs) {
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   const id = params.mangaId;
-  const user = await getUser(request);
+  const session = await getSession(request);
+  const { user } = session;
 
   const fetchPromises: Promise<any>[] = [
     fetch(`${API}/api/manga/${id}`),
@@ -23,7 +25,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   ];
 
   if (user) {
-    const token = getAccessToken(request)!;
+    const token = session.token!;
     fetchPromises.push(
       fetch(`${API}/api/bookmarks/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -62,7 +64,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     lastRead = rData.lastRead ?? null;
   }
 
-  return { manga, chapters, user, bookmarked, readChapterIds, lastRead };
+  return data(
+    { manga, chapters, user, bookmarked, readChapterIds, lastRead },
+    { headers: sessionHeaders(session) },
+  );
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -172,7 +177,7 @@ export default function MangaDetail() {
       await runJob(
         () => fetch(`/api/manga/${manga.id}/download/pdf`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
           body: JSON.stringify({ chapter_ids: [chId] }),
         }),
         state => setDlStates(s => ({ ...s, [chId]: state })),
@@ -198,7 +203,7 @@ export default function MangaDetail() {
       await runJob(
         () => fetch(`/api/manga/${manga.id}/download/pdf`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
           body: JSON.stringify({ chapter_ids: ids }),
         }),
         state => setBundleState(state),

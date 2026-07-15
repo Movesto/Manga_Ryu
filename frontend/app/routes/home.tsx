@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import { useLoaderData, useRouteLoaderData, Link } from "react-router";
+import { data } from "react-router";
 import type { AuthUser } from "../lib/auth.server";
-import { getUser, getAccessToken } from "../lib/auth.server";
+import { getSession, sessionHeaders } from "../lib/auth.server";
 import { API, imgUrl } from "../lib/config";
-import { relativeTime, chNum } from "../lib/utils";
+import { chNum } from "../lib/utils";
 import { ChevronIcon, PlayIcon } from "../components/icons";
 import { MangaCard } from "../components/MangaCard";
 
 export async function loader({ request }: { request: Request }) {
-  const user  = await getUser(request);
-  const token = user ? getAccessToken(request) : null;
+  const session = await getSession(request);
+  const token = session.user ? session.token : null;
 
   const fetches: Promise<Response>[] = [
     fetch(`${API}/api/popular`),
@@ -35,14 +36,14 @@ export async function loader({ request }: { request: Request }) {
   const editorsPick:  any[] = editorsData?.mangaList   || [];
   const continueReading: any[] = historyData?.history  || [];
 
-  return {
+  return data({
     sliderManga: allPopular.slice(0, 12),
     editorsPick,
     latest:         allLatest.slice(0, 12),
     completed:      allCompleted.slice(0, 18),
     newSeries:      allNew.slice(0, 24),
     continueReading,
-  };
+  }, { headers: sessionHeaders(session) });
 }
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -61,7 +62,9 @@ function HeroSlider({ manga }: { manga: any[] }) {
   const [trackIdx, setTrackIdx] = useState(N);
   const [animated, setAnimated] = useState(true);
   const trackIdxRef = useRef(N);
-  trackIdxRef.current = trackIdx;
+  useEffect(() => {
+    trackIdxRef.current = trackIdx;
+  }, [trackIdx]);
 
   const sectionRef = useRef<HTMLElement>(null);
   const [cw, setCw]   = useState(900);
@@ -383,11 +386,18 @@ function EditorsPick({ manga, isAdmin }: { manga: any[]; isAdmin: boolean }) {
     );
   }
 
+  return <EditorsPickCarousel manga={manga} isAdmin={isAdmin} />;
+}
+
+function EditorsPickCarousel({ manga, isAdmin }: { manga: any[]; isAdmin: boolean }) {
+  const N = manga.length;
   const tripled = [...manga, ...manga, ...manga];
   const [trackIdx, setTrackIdx]   = useState(N);
   const [animated, setAnimated]   = useState(true);
   const trackIdxRef               = useRef(N);
-  trackIdxRef.current             = trackIdx;
+  useEffect(() => {
+    trackIdxRef.current = trackIdx;
+  }, [trackIdx]);
   const sectionRef                = useRef<HTMLElement>(null);
   const [cw, setCw]               = useState(900);
 

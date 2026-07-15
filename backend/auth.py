@@ -2,6 +2,7 @@
 JWT-based authentication.
 Routes are mounted at /api/auth/* via the router included in main.py.
 """
+import hashlib
 import logging
 import os
 import secrets
@@ -31,7 +32,7 @@ if not _raw_secret:
     )
 SECRET_KEY     = _raw_secret
 ALGORITHM      = "HS256"
-ACCESS_EXPIRE  = int(os.getenv("ACCESS_TOKEN_MINUTES", "10080"))  # minutes (7 days default)
+ACCESS_EXPIRE  = int(os.getenv("ACCESS_TOKEN_MINUTES", "30"))     # minutes (short-lived; refresh flow renews)
 REFRESH_EXPIRE = int(os.getenv("REFRESH_TOKEN_DAYS",   "30"))    # days
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -107,11 +108,26 @@ class UserOut(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_MAX_PASSWORD_BYTES = 72  # bcrypt hard limit
+
+# Verified against a constant hash when the username doesn't exist, so login
+# timing doesn't reveal which usernames are registered.
+_DUMMY_HASH = _bcrypt.hashpw(b"timing-equalizer-placeholder", _bcrypt.gensalt())
+
 def _hash(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
 def _verify(plain: str, hashed: str) -> bool:
-    return _bcrypt.checkpw(plain.encode(), hashed.encode())
+    if len(plain.encode()) > _MAX_PASSWORD_BYTES:
+        return False
+    try:
+        return _bcrypt.checkpw(plain.encode(), hashed.encode())
+    except ValueError:
+        return False
+
+def _hash_refresh(token: str) -> str:
+    """Refresh tokens are stored hashed so a DB leak doesn't yield usable tokens."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 def _make_access_token(user_id: int, username: str) -> str:
     exp = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_EXPIRE)
@@ -127,7 +143,7 @@ def _make_refresh_token(user_id: int) -> str:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (%s, %s, %s)",
-                (user_id, token, exp),
+                (user_id, _hash_refresh(token), exp),
             )
             conn.commit()
     return token
@@ -159,7 +175,7 @@ def get_current_user(token: str = Depends(_oauth2)) -> dict:
         if not user_id:
             raise creds_exc
     except JWTError:
-        raise creds_exc
+        raise creds_exc from None
 
     user = _get_user_by_id(user_id)
     if not user or not user["is_active"]:
@@ -184,6 +200,8 @@ AdminUser = Annotated[dict, Depends(get_admin_user)]
 def register(request: Request, body: RegisterBody):
     if len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
+    if len(body.password.encode()) > _MAX_PASSWORD_BYTES:
+        raise HTTPException(400, f"Password must be at most {_MAX_PASSWORD_BYTES} bytes")
     if len(body.username) < 2:
         raise HTTPException(400, "Username must be at least 2 characters")
 
@@ -222,7 +240,17 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
             )
             row = cur.fetchone()
 
-    if not row or not _verify(form.password, row[2]):
+    if not row:
+        # Equalize timing with the bcrypt check below so response time
+        # doesn't reveal whether the username exists
+        _bcrypt.checkpw(form.password.encode()[:_MAX_PASSWORD_BYTES], _DUMMY_HASH)
+        audit.log_event("login_failure", actor=form.username, ip=ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not _verify(form.password, row[2]):
         audit.log_event("login_failure", actor=form.username, ip=ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -241,7 +269,8 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
 
 
 @router.post("/refresh", response_model=TokenOut)
-def refresh_token(body: RefreshBody):
+@limiter.limit("10/minute")
+def refresh_token(request: Request, body: RefreshBody):
     now = datetime.now(timezone.utc)
     with database.get_conn() as conn:
         with conn.cursor() as cur:
@@ -252,7 +281,7 @@ def refresh_token(body: RefreshBody):
                 JOIN users u ON u.id = rt.user_id
                 WHERE rt.token = %s AND rt.revoked = FALSE AND rt.expires_at > %s
                 """,
-                (body.refresh_token, now),
+                (_hash_refresh(body.refresh_token), now),
             )
             row = cur.fetchone()
             if not row:
@@ -262,7 +291,7 @@ def refresh_token(body: RefreshBody):
             # Rotate: revoke old token, issue new one
             cur.execute(
                 "UPDATE refresh_tokens SET revoked = TRUE WHERE token = %s",
-                (body.refresh_token,),
+                (_hash_refresh(body.refresh_token),),
             )
             conn.commit()
 
@@ -278,12 +307,13 @@ def me(user: CurrentUser):
 
 
 @router.post("/logout", status_code=204)
+@limiter.limit("20/minute")
 def logout(request: Request, body: RefreshBody):
     with database.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE refresh_tokens SET revoked = TRUE WHERE token = %s",
-                (body.refresh_token,),
+                (_hash_refresh(body.refresh_token),),
             )
             conn.commit()
     audit.log_event("logout", ip=request.client.host if request.client else None)
