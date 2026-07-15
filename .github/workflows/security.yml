@@ -199,20 +199,56 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: true   # DB already fetched by the first Trivy step
 
-  # ── Job 5: Deploy ─────────────────────────────────────────────────────────
-  # NOTE: this deploys via git pull + host build, while Job 4 scans Docker
-  # images that are never shipped. Migrating to registry-based image deploys
-  # (push to GHCR, `docker compose pull` on the server) would make the scanned
-  # artifact the deployed artifact — requires server-side compose setup first.
-  # Only runs on push to main AND only after all three security jobs pass.
-  # Requires three GitHub secrets (see README setup section):
-  #   SSH_HOST        — server hostname or IP (e.g. mangaryu.org)
-  #   SSH_USER        — SSH login user         (e.g. hamid)
-  #   SSH_PRIVATE_KEY — private key matching the public key on the server
-  deploy:
-    name: Deploy to Production
+  # ── Job 5: Build & Push Images ────────────────────────────────────────────
+  # Publishes the images that Job 4 just scanned so the deployed artifact IS
+  # the scanned artifact. Backend is built without the ML tagger deps
+  # (INSTALL_ML=false) — the 1 GB Oracle VM can't fit torch.
+  build-push:
+    name: Push Images to GHCR
     needs: [secrets, sast, sca-backend, sca-frontend, container-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            context: ./backend
+            build-args: INSTALL_ML=false
+          - service: frontend
+            context: ./frontend
+            build-args: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          build-args: ${{ matrix.build-args }}
+          tags: |
+            ghcr.io/movesto/manga-ryu-${{ matrix.service }}:latest
+            ghcr.io/movesto/manga-ryu-${{ matrix.service }}:${{ github.sha }}
+
+  # ── Job 6: Deploy ─────────────────────────────────────────────────────────
+  # Pulls the freshly pushed images on the Oracle Cloud VM and restarts the
+  # compose stack. Requires three GitHub secrets:
+  #   SSH_HOST        — VM public IP
+  #   SSH_USER        — VM login user (e.g. ubuntu)
+  #   SSH_PRIVATE_KEY — private key matching the VM's authorized key
+  deploy:
+    name: Deploy to Oracle Cloud
+    needs: [build-push]
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
@@ -223,20 +259,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            cd /home/hamid/Documents/Manga_Ryu
-
-            # Pull latest code
+            cd ~/manga-ryu
             git pull origin main
-
-            # Reinstall backend deps if requirements changed
-            backend/.venv/bin/pip install -r backend/requirements.txt -r backend/requirements-ml.txt -q
-
-            # Rebuild frontend
-            cd frontend
-            npm ci --prefer-offline
-            npm run build
-            cd ..
-
-            # Restart services (requires NOPASSWD in sudoers for these two commands)
-            sudo systemctl restart mangaryu-backend.service
-            sudo systemctl restart mangaryu-frontend.service
+            cd infrastructure
+            docker compose -f docker-compose.prod.yml --env-file .env pull backend frontend
+            docker compose -f docker-compose.prod.yml --env-file .env up -d
+            docker image prune -f

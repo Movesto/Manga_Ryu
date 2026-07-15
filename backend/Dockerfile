@@ -8,9 +8,16 @@ WORKDIR /build
 # Create the venv that will be copied into the runtime stage
 RUN python -m venv /build/.venv
 
+# INSTALL_ML=false skips the ML tagger deps (torch etc., ~1.5 GB) — use it for
+# memory-constrained hosts; tagger.py degrades gracefully when they're absent.
+ARG INSTALL_ML=true
+
 COPY requirements.txt requirements-ml.txt ./
 RUN .venv/bin/pip install --no-cache-dir --upgrade pip \
- && .venv/bin/pip install --no-cache-dir -r requirements.txt -r requirements-ml.txt
+ && .venv/bin/pip install --no-cache-dir -r requirements.txt \
+ && if [ "$INSTALL_ML" = "true" ]; then \
+      .venv/bin/pip install --no-cache-dir -r requirements-ml.txt; \
+    fi
 
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────

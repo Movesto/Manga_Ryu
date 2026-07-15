@@ -1,5 +1,6 @@
 FROM node:22-alpine AS development-dependencies-env
-COPY . /app
+# Copy manifests first so the npm ci layer caches across source changes
+COPY ./package.json package-lock.json /app/
 WORKDIR /app
 RUN npm ci
 

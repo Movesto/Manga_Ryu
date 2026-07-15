@@ -3,7 +3,7 @@ import { redirect, useActionData, useNavigation, Link, useRouteLoaderData } from
 import type { Route } from "./+types/signin";
 import { getUser, authCookieHeaders } from "../lib/auth.server";
 import { verifyCsrf } from "../lib/csrf.server";
-import { API } from "../lib/config";
+import { API, clientIpHeaders } from "../lib/config";
 import { MangaRyuLogo, SITE_NAME } from "../components/Logo";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -28,7 +28,7 @@ export async function action({ request }: Route.ActionArgs) {
     });
     const res = await fetch(`${API}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...clientIpHeaders(request) },
       body: body.toString(),
     });
     if (!res.ok) {
@@ -49,7 +49,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "register") {
     const res = await fetch(`${API}/api/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...clientIpHeaders(request) },
       body: JSON.stringify({
         username: form.get("username"),
         email: form.get("email"),
