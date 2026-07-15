@@ -2,7 +2,7 @@
 # For CUDA support install PyTorch first from https://pytorch.org/get-started/locally/
 # then run: pip install -r requirements.txt
 sentence-transformers>=3.0.0
-scikit-learn>=1.5.0
+scikit-learn>=1.9.0
 joblib>=1.4.0
 psycopg2-binary>=2.9.0
 numpy>=1.26.0
