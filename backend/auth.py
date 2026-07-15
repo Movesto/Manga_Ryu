@@ -13,7 +13,7 @@ import bcrypt as _bcrypt
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
+import jwt
 from pydantic import BaseModel, EmailStr
 from ratelimit import limiter
 
@@ -174,7 +174,7 @@ def get_current_user(token: str = Depends(_oauth2)) -> dict:
         user_id = int(payload.get("sub", 0))
         if not user_id:
             raise creds_exc
-    except JWTError:
+    except (jwt.PyJWTError, ValueError):
         raise creds_exc from None
 
     user = _get_user_by_id(user_id)

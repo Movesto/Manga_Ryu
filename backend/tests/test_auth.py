@@ -1,8 +1,8 @@
 import hashlib
 from datetime import datetime, timezone
 
+import jwt
 import pytest
-from jose import JWTError, jwt
 
 import auth
 
@@ -45,10 +45,10 @@ class TestAccessToken:
 
     def test_tampered_token_rejected(self):
         token = auth._make_access_token(42, "alice")
-        with pytest.raises(JWTError):
+        with pytest.raises(jwt.PyJWTError):
             jwt.decode(token + "x", auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
 
     def test_wrong_secret_rejected(self):
         token = auth._make_access_token(42, "alice")
-        with pytest.raises(JWTError):
+        with pytest.raises(jwt.PyJWTError):
             jwt.decode(token, "other-secret", algorithms=[auth.ALGORITHM])
