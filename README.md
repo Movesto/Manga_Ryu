@@ -1,18 +1,151 @@
 # Manga Ryu
 
-A self-hosted manga reader that aggregates content from dozens of sources via a [Suwayomi](https://github.com/Suwayomi/Suwayomi-Server) backend, backed by a FastAPI API and a React Router v7 frontend.
+A self-hosted manga reader running live at **[mangaryu.org](https://mangaryu.org)**.
+It aggregates 80+ sources through a [Suwayomi](https://github.com/Suwayomi/Suwayomi-Server)
+engine, serves them through a FastAPI API and a server-rendered React frontend,
+and ships with the security posture of a production service — CSRF protection,
+tiered rate limiting, audit logging, a nonce-based CSP, and a CI pipeline that
+scans every commit and deploys the exact images it scanned.
 
 ---
 
-## Stack
+## Features
+
+- **Read anything** — browse, search, and read manga/manhwa/manhua from 80+
+  sources, with full-text search and a live fallback for titles not yet synced
+- **Accounts** — bookmarks with unread badges, reading history with
+  *Continue Reading*, cross-device sessions that renew silently
+- **Reader** — configurable width modes, swipe navigation, chapter downloads
+  as Kindle EPUB, PDF, or a self-contained offline HTML reader
+- **Curation** — admin panel with Editor's Choice picks, AniList-powered
+  ratings, auto-advancing showcase sliders
+- **ML auto-tagging** — a sentence-transformer classifier fills in missing
+  genre tags for poorly-tagged sources (trained in `ml/`, inference optional)
+- **PWA** — installable, with a mobile-tuned reading experience
+
+## How it works
+
+```
+Browser ──> Cloudflare Tunnel ──> React Router v7 (SSR, node)
+                                     │  /api/* proxy · /media/* image cache
+                                     ▼
+                                  FastAPI ──> PostgreSQL 16
+                                     │
+                                     ▼
+                                  Suwayomi engine ──> 80+ manga sources
+```
 
 | Layer | Technology |
 |---|---|
 | Frontend | React Router v7 (SSR), TypeScript, Tailwind CSS v4 |
-| Backend API | FastAPI (Python), psycopg2 |
+| Backend API | FastAPI (Python 3.12), psycopg2 |
 | Database | PostgreSQL 16 |
-| Manga engine | Suwayomi Server (aggregates 80+ sources) |
-| Auth | JWT — access + refresh tokens in HttpOnly cookies |
+| Manga engine | Suwayomi Server |
+| Auth | JWT — 30-min access + rotating refresh tokens, HttpOnly cookies |
+| ML | sentence-transformers + scikit-learn genre classifier |
+| Ingress | Cloudflare Tunnel (no inbound ports, TLS at the edge) |
+
+---
+
+## Deployment
+
+The whole production setup is one command on a fresh Ubuntu VM (built for
+Oracle Cloud's free `VM.Standard.E2.1.Micro`, 1 GB RAM):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Movesto/Manga_Ryu/main/infrastructure/oracle-setup.sh | bash
+```
+
+The script is idempotent and does everything: swap file, Docker, repo
+checkout, secret generation, Cloudflare Tunnel prompt, image pull from GHCR,
+launch, and health checks. When it finishes, it tells you the two remaining
+clicks (tunnel hostname → `frontend:3000`, register the first account —
+it becomes admin).
+
+Every push to `main` then deploys automatically: CI builds the images, scans
+them with Trivy, pushes them to GHCR, and the VM pulls and restarts — the
+scanned artifact **is** the deployed artifact.
+
+Details, sizing rationale, and troubleshooting:
+[`infrastructure/ORACLE_DEPLOY.md`](infrastructure/ORACLE_DEPLOY.md)
+
+---
+
+## Local development
+
+Prerequisites: Docker, Python 3.12+, Node 22+.
+
+```bash
+# 1. Infrastructure (Suwayomi :4567 + PostgreSQL :5432)
+cd infrastructure
+cp .env.example .env               # set POSTGRES_PASSWORD + JWT_SECRET
+docker compose up -d suwayomi postgres
+
+# 2. Backend (http://localhost:8000)
+cd ../backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+cp .env.example .env               # set JWT_SECRET (backend loads .env itself)
+uvicorn main:app --port 8000 --reload
+
+# 3. Frontend (http://localhost:5173)
+cd ../frontend
+npm install
+npm run dev
+```
+
+Quality gates — the same ones CI runs on every push:
+
+```bash
+cd backend  && ruff check . && pytest tests/
+cd frontend && npm run lint && npm run typecheck && npm test && npm run build
+```
+
+All configuration is documented in `backend/.env.example` and
+`infrastructure/.env.example`; the reference table is at the bottom of this
+file.
+
+---
+
+## Security
+
+This project doubles as a DevSecOps portfolio (see
+[`CHALLENGES.md`](CHALLENGES.md)). What's implemented:
+
+- **Auth**: bcrypt passwords, 30-minute access tokens, single-use rotating
+  refresh tokens stored hashed, login timing-oracle mitigation, brute-force
+  rate limits, audit logging of all auth and admin events
+- **Web**: double-submit CSRF with constant-time comparison, nonce-based CSP
+  (no `unsafe-inline` scripts), HSTS, same-origin checks on the API proxy,
+  session cookies never forwarded upstream
+- **Pipeline** (`.github/workflows/`): Gitleaks over full history, Semgrep
+  SAST, pip-audit + npm audit SCA, Trivy container scanning on both images —
+  all gating deploys; Dependabot across pip, npm, Docker, and Actions
+- **Runtime**: non-root multi-stage containers, per-service memory caps,
+  required-secret enforcement (the backend refuses to boot without
+  `JWT_SECRET`), tunnel-only ingress with zero open inbound ports
+
+---
+
+## ML genre tagger
+
+Sources often ship manga with missing or junk genre tags. The `ml/` pipeline
+trains a multi-label classifier (MiniLM sentence embeddings → one-vs-rest
+logistic regression) on well-tagged titles from the database, and the backend
+applies it to untagged manga during sync — predictions never overwrite
+source-provided genres.
+
+```bash
+cd ml
+pip install -r requirements.txt
+python extract_data.py       # pull training data from the DB → data.csv
+python train_tagger.py       # train, evaluate, save model + metrics.json
+```
+
+Deploy the resulting `ml/model/` next to the backend and set
+`TAGGER_MODEL_DIR`. Inference is optional everywhere — without a model the
+backend simply skips tagging. (It stays disabled on the 1 GB production VM;
+torch doesn't fit.)
 
 ---
 
@@ -20,86 +153,28 @@ A self-hosted manga reader that aggregates content from dozens of sources via a 
 
 ```
 Manga_Ryu/
-├── backend/            # FastAPI application
-│   ├── routes/         # API route handlers (home, catalog, manga, download, html_reader)
-│   ├── tests/          # pytest suite
-│   ├── auth.py         # JWT auth, user management
-│   ├── audit.py        # Security audit logging
-│   ├── database.py     # PostgreSQL connection pool + schema
-│   ├── bookmarks.py / history.py / ratings.py / editors_choice.py
-│   ├── ratelimit.py    # SlowAPI rate limiter
-│   ├── suwayomi.py     # Suwayomi GraphQL client
-│   ├── sync.py         # Background sync from Suwayomi → Postgres
-│   ├── tagger.py       # ML genre tagger (inference)
-│   ├── cache.py        # In-memory TTL cache
-│   └── main.py         # App entry point
-├── frontend/           # React Router v7 SSR app
-│   ├── app/
-│   │   ├── routes/     # File-based routes (incl. /api and /media proxies)
-│   │   ├── components/ # Shared UI components (Navbar, MangaCard, icons)
-│   │   └── lib/        # Shared utilities (config, utils, auth.server, csrf.server)
-│   └── ...
-├── ml/                 # Genre tagger training pipeline (extract_data, train_tagger)
+├── backend/                 # FastAPI application
+│   ├── routes/              # home, catalog, manga, download, html_reader
+│   ├── tests/               # pytest suite
+│   ├── auth.py              # JWT auth, refresh rotation, user management
+│   ├── audit.py             # security audit logging
+│   ├── database.py          # connection pool + schema
+│   ├── sync.py / suwayomi.py# catalog sync + Suwayomi GraphQL client
+│   ├── tagger.py            # ML genre tagger (inference)
+│   └── main.py              # app entry point
+├── frontend/                # React Router v7 SSR app
+│   └── app/
+│       ├── routes/          # file-based routes, /api and /media proxies
+│       ├── components/      # Navbar, MangaCard, icons
+│       └── lib/             # auth.server, csrf.server, config, utils
+├── ml/                      # tagger training pipeline
 ├── infrastructure/
-│   ├── docker-compose.yml        # Local dev: Suwayomi + PostgreSQL + backend
-│   ├── docker-compose.prod.yml   # Production: full stack + Cloudflare Tunnel
-│   ├── oracle-setup.sh           # One-command Oracle Cloud VM bootstrap
-│   └── ORACLE_DEPLOY.md          # Production deployment runbook
-└── .github/workflows/  # CI (lint/test/build) + security pipeline (SAST/SCA/Trivy/deploy)
+│   ├── docker-compose.yml       # local dev stack
+│   ├── docker-compose.prod.yml  # production stack + Cloudflare Tunnel
+│   ├── oracle-setup.sh          # one-command VM bootstrap
+│   └── ORACLE_DEPLOY.md         # deployment runbook
+└── .github/workflows/       # ci.yml (quality) + security.yml (scans + deploy)
 ```
-
----
-
-## Prerequisites
-
-- Node.js 22+
-- Python 3.12+
-- Docker & Docker Compose
-- PostgreSQL 16 (or use Docker)
-
----
-
-## Getting started
-
-### 1. Start infrastructure (Suwayomi + PostgreSQL)
-
-```bash
-cd infrastructure
-docker compose up -d
-```
-
-Suwayomi will be available at `http://localhost:4567`.
-PostgreSQL will be available on port `5432`.
-
-### 2. Backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-# Optional — only needed to run the ML genre tagger locally:
-# pip install -r requirements-ml.txt
-
-# REQUIRED — the server refuses to start without it:
-export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-# Optional (default shown):
-export DATABASE_URL="postgresql://manga:manga@localhost:5432/manga_db"
-
-uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-API is available at `http://localhost:8000`.
-
-### 3. Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-App is available at `http://localhost:5173`.
 
 ---
 
@@ -107,71 +182,14 @@ App is available at `http://localhost:5173`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `JWT_SECRET` | **required** | Secret key for signing JWTs — the server **refuses to start** without it. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `JWT_SECRET` | **required** | JWT signing key — the server refuses to start without it |
+| `POSTGRES_PASSWORD` | **required** (Docker) | Database password (use hex — it's interpolated into `DATABASE_URL`) |
+| `TUNNEL_TOKEN` | **required** (prod) | Cloudflare Tunnel connector token |
 | `DATABASE_URL` | `postgresql://manga:manga@localhost:5432/manga_db` | PostgreSQL connection string |
-| `SUWAYOMI_URL` | `http://127.0.0.1:4567` | Base URL of the Suwayomi server |
-| `ACCESS_TOKEN_MINUTES` | `30` | Access-token lifetime (kept short; the frontend renews sessions via the refresh token) |
+| `SUWAYOMI_URL` | `http://127.0.0.1:4567` | Suwayomi server base URL |
+| `ACCESS_TOKEN_MINUTES` | `30` | Access-token lifetime (sessions renew via refresh token) |
 | `REFRESH_TOKEN_DAYS` | `30` | Refresh-token lifetime |
-| `POSTGRES_PASSWORD` | **required** (Docker) | Database password, injected by docker-compose |
-| `KCC_PATH` | empty (disabled) | Absolute path to the `kcc-c2e` binary for Kindle EPUB downloads |
-| `TAGGER_MODEL_DIR` | `../ml/model` | Directory with the trained genre-tagger model |
-| `TAGGER_THRESHOLD` | `0.30` | Tagger prediction confidence cutoff (0–1) |
-
-See `backend/.env.example` and `infrastructure/.env.example` for copy-paste templates.
-
----
-
-## Features
-
-- Browse, search and read manga from 80+ sources
-- Full-text search with live Suwayomi fallback for new titles
-- User accounts with bookmarks
-- Editor's Choice section managed from the admin panel
-- Auto-advancing sliders (Popular, Editor's Pick)
-- Chapter reader with configurable width modes
-- Admin panel for curating featured picks
-
----
-
-## Development
-
-```bash
-# Backend — lint and tests
-cd backend
-pip install -r requirements-dev.txt
-ruff check .
-pytest tests/
-
-# Frontend — lint, typecheck, tests, build
-cd frontend
-npm run lint
-npm run typecheck
-npm test
-npm run build
-```
-
-Both run automatically in CI (`.github/workflows/ci.yml`), alongside the
-security pipeline (`security.yml`: Gitleaks, Semgrep, pip-audit, npm audit, Trivy).
-
----
-
-## Production deployment (Oracle Cloud)
-
-The production stack runs on an Oracle Cloud Always Free VM behind a
-Cloudflare Tunnel — no inbound ports, TLS at the Cloudflare edge. One command
-on a fresh Ubuntu VM does the entire setup (swap, Docker, checkout, secrets,
-launch):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Movesto/Manga_Ryu/main/infrastructure/oracle-setup.sh | bash
-```
-
-- Images are built and Trivy-scanned by CI, pushed to GHCR
-  (`manga-ryu-backend`, `manga-ryu-frontend`), and pulled on the VM — the
-  scanned artifact is the deployed artifact.
-- Pushes to `main` auto-deploy via `docker compose pull && up -d` once all
-  security jobs pass (repo secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`).
-- Sized for a 1 GB `VM.Standard.E2.1.Micro`: per-service memory caps, bounded
-  JVM heap, 2 GB swap, and the ML tagger excluded from the image.
-
-Full runbook: [`infrastructure/ORACLE_DEPLOY.md`](infrastructure/ORACLE_DEPLOY.md)
+| `IMAGE_TAG` | `latest` | GHCR image tag to deploy (pin to a commit SHA to roll back) |
+| `KCC_PATH` | empty (disabled) | Path to `kcc-c2e` for Kindle EPUB conversion |
+| `TAGGER_MODEL_DIR` | `../ml/model` | Trained genre-tagger model directory |
+| `TAGGER_THRESHOLD` | `0.30` | Tagger confidence cutoff (0–1) |
