@@ -3,10 +3,10 @@
 # Build tools (gcc, etc.) stay here and never reach the final image.
 FROM python:3.12-slim AS builder
 
-WORKDIR /build
-
-# Create the venv that will be copied into the runtime stage
-RUN python -m venv /build/.venv
+# Build the venv at its FINAL runtime path so console-script shebangs
+# (e.g. .venv/bin/uvicorn → #!/app/.venv/bin/python) stay valid after copy.
+WORKDIR /app
+RUN python -m venv /app/.venv
 
 # INSTALL_ML=false skips the ML tagger deps (torch etc., ~1.5 GB) — use it for
 # memory-constrained hosts; tagger.py degrades gracefully when they're absent.
@@ -30,7 +30,7 @@ RUN useradd --system --no-create-home --shell /usr/sbin/nologin appuser
 WORKDIR /app
 
 # Only the compiled venv comes from the builder — nothing else
-COPY --from=builder /build/.venv /app/.venv
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy application source with correct ownership in one layer
 COPY --chown=appuser:appuser . .
@@ -48,9 +48,10 @@ USER appuser
 
 EXPOSE 8000
 
-# --proxy-headers trusts X-Forwarded-For from the nginx reverse proxy.
-# --forwarded-allow-ips * is safe here because nginx is the only entry point.
-CMD ["uvicorn", "main:app", \
+# Invoke via `python -m uvicorn` so startup never depends on a console-script
+# shebang. --proxy-headers trusts X-Forwarded-For from the reverse proxy /
+# tunnel; --forwarded-allow-ips * is safe because that proxy is the only entry.
+CMD ["python", "-m", "uvicorn", "main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--proxy-headers", \
