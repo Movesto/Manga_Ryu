@@ -50,15 +50,57 @@ def list_extensions(_: AdminUser):
     return {"extensions": nodes}
 
 
+@router.get("/repos")
+def list_repos(_: AdminUser):
+    return {"repos": suwayomi.list_extension_stores_gql()}
+
+
+@router.post("/repos")
+@limiter.limit("12/minute")
+async def add_repo(request: Request, _: AdminUser):
+    body = await request.json()
+    url = (body.get("indexUrl") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="indexUrl is required")
+    err = _first_error(suwayomi.add_extension_store_gql(url))
+    if err:
+        raise HTTPException(status_code=502, detail=err)
+    # Pull the newly-registered store's index immediately.
+    suwayomi.fetch_extensions_gql()
+    return {"ok": True}
+
+
+@router.post("/repos/remove")
+@limiter.limit("12/minute")
+async def remove_repo(request: Request, _: AdminUser):
+    body = await request.json()
+    url = (body.get("indexUrl") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="indexUrl is required")
+    err = _first_error(suwayomi.remove_extension_store_gql(url))
+    if err:
+        raise HTTPException(status_code=502, detail=err)
+    return {"ok": True}
+
+
 @router.post("/refresh")
 @limiter.limit("6/minute")
 def refresh_extensions(request: Request, _: AdminUser):
-    """Re-pull the extension index from the configured repos."""
+    """
+    Re-pull the extension index from the registered repo stores. If none are
+    registered yet, auto-register the default repo(s) first — otherwise the
+    fetch returns nothing (this was the original "No extensions found" bug).
+    """
+    if not suwayomi.list_extension_stores_gql():
+        for url in suwayomi.DEFAULT_EXTENSION_REPOS:
+            suwayomi.add_extension_store_gql(url)
+
     result = suwayomi.fetch_extensions_gql()
     err = _first_error(result)
     if err:
         raise HTTPException(status_code=502, detail=err)
-    return {"ok": True}
+    count = len((((result.get("data") or {}).get("fetchExtensions") or {}).get("extensions")) or [])
+    return {"ok": True, "count": count}
 
 
 @router.post("/{pkg_name}/install")

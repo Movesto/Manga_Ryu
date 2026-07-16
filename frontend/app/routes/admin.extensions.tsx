@@ -27,23 +27,28 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!user) throw redirect("/signin?next=/admin/extensions");
   if (!user.is_admin) throw redirect("/");
 
+  const authHeader = { Authorization: `Bearer ${token}` };
   let extensions: Extension[] = [];
+  let repos: string[] = [];
   let error: string | null = null;
   try {
-    const res = await fetch(`${API}/api/admin/extensions`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const d = await res.json();
-      extensions = (d.extensions ?? []) as Extension[];
+    const [extRes, repoRes] = await Promise.all([
+      fetch(`${API}/api/admin/extensions`, { headers: authHeader }),
+      fetch(`${API}/api/admin/extensions/repos`, { headers: authHeader }),
+    ]);
+    if (extRes.ok) {
+      extensions = ((await extRes.json()).extensions ?? []) as Extension[];
     } else {
-      error = `Couldn't load extensions from Suwayomi (HTTP ${res.status}).`;
+      error = `Couldn't load extensions from Suwayomi (HTTP ${extRes.status}).`;
+    }
+    if (repoRes.ok) {
+      repos = ((await repoRes.json()).repos ?? []) as string[];
     }
   } catch {
     error = "Couldn't reach the backend.";
   }
 
-  return data({ user, extensions, error }, { headers: sessionHeaders(session) });
+  return data({ user, extensions, repos, error }, { headers: sessionHeaders(session) });
 }
 
 // ── action ────────────────────────────────────────────────────────────────────
@@ -60,11 +65,30 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = form.get("intent") as string;
   const pkg = form.get("pkg_name") as string;
   const headers = { Authorization: `Bearer ${token}` };
+  const jsonHeaders = { ...headers, "Content-Type": "application/json" };
 
   try {
     if (intent === "refresh") {
       const r = await fetch(`${API}/api/admin/extensions/refresh`, { method: "POST", headers });
-      return r.ok ? { ok: true } : { error: "Refresh failed — is Suwayomi reachable?" };
+      const body = await r.json().catch(() => ({}));
+      return r.ok
+        ? { ok: true, count: body.count as number | undefined }
+        : { error: "Refresh failed — is Suwayomi reachable?" };
+    }
+    if (intent === "add_repo" || intent === "remove_repo") {
+      const indexUrl = ((form.get("repo_url") as string) ?? "").trim();
+      if (!indexUrl) return { error: "Enter a repo index URL." };
+      const path = intent === "add_repo" ? "repos" : "repos/remove";
+      const r = await fetch(`${API}/api/admin/extensions/${path}`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ indexUrl }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        return { error: body.detail ? String(body.detail) : `${intent.replace("_", " ")} failed` };
+      }
+      return { ok: true };
     }
     if (intent === "sync") {
       const r = await fetch(`${API}/api/sync`, { method: "POST", headers });
@@ -164,12 +188,80 @@ function Spinner() {
   return <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />;
 }
 
+// ── repositories ────────────────────────────────────────────────────────────────
+
+function RepoManager({ repos }: { repos: string[] }) {
+  const { csrf } = useRouteLoaderData("root") as { csrf: string };
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const busy = fetcher.state !== "idle";
+  const [url, setUrl] = useState("");
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+      <h2 className="text-sm font-semibold text-white mb-1">Repositories</h2>
+      <p className="text-zinc-500 text-xs mb-4">
+        Extension repos to pull sources from. “Refresh catalog” auto-adds the default
+        (keiyoushi) if none are set.
+      </p>
+
+      {repos.length > 0 ? (
+        <ul className="mb-4 space-y-2">
+          {repos.map((r) => (
+            <li key={r} className="flex items-center gap-2 text-sm">
+              <span className="flex-1 min-w-0 truncate text-zinc-300 font-mono text-xs">{r}</span>
+              <button
+                onClick={() =>
+                  fetcher.submit(
+                    { intent: "remove_repo", repo_url: r, csrf_token: csrf },
+                    { method: "post" },
+                  )
+                }
+                disabled={busy}
+                className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-50 flex-shrink-0"
+                title="Remove repo"
+              >
+                <TrashIcon />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-zinc-600 text-xs mb-4">No repositories registered yet.</p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://…/index.min.json"
+          className="flex-1 min-w-[220px] bg-zinc-950 border border-zinc-700 focus:border-orange-500 rounded-xl px-3 py-2 text-white placeholder-zinc-500 text-sm outline-none transition-colors font-mono"
+        />
+        <button
+          onClick={() => {
+            if (!url.trim()) return;
+            fetcher.submit(
+              { intent: "add_repo", repo_url: url.trim(), csrf_token: csrf },
+              { method: "post" },
+            );
+            setUrl("");
+          }}
+          disabled={busy}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white transition-colors disabled:opacity-50"
+        >
+          {busy ? <Spinner /> : <PlusIcon />} Add repo
+        </button>
+      </div>
+      {fetcher.data?.error && <p className="text-xs text-red-400 mt-2">{fetcher.data.error}</p>}
+    </div>
+  );
+}
+
 // ── page ──────────────────────────────────────────────────────────────────────
 
 export default function AdminExtensionsPage() {
-  const { extensions, error } = useLoaderData<typeof loader>();
+  const { extensions, repos, error } = useLoaderData<typeof loader>();
   const { csrf } = useRouteLoaderData("root") as { csrf: string };
-  const bar = useFetcher<{ ok?: boolean; error?: string; sync?: string }>();
+  const bar = useFetcher<{ ok?: boolean; error?: string; sync?: string; count?: number }>();
   const barBusy = bar.state !== "idle";
   const barIntent = barBusy ? (bar.formData?.get("intent") as string) : null;
 
@@ -235,9 +327,15 @@ export default function AdminExtensionsPage() {
         )}
         {bar.data?.ok && barIntent == null && (
           <p className="text-sm text-emerald-400 mb-4">
-            {bar.data.sync ? `Sync ${bar.data.sync}. New manga will appear as it runs.` : "Done."}
+            {bar.data.sync
+              ? `Sync ${bar.data.sync}. New manga will appear as it runs.`
+              : bar.data.count != null
+                ? `Loaded ${bar.data.count} extensions. Install some below.`
+                : "Done."}
           </p>
         )}
+
+        <RepoManager repos={repos} />
 
         {error ? (
           <div className="py-12 text-center border border-dashed border-zinc-700 rounded-xl">

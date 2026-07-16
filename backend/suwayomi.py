@@ -211,8 +211,45 @@ def install_extension(pkg_name: str):
 
 
 # --- EXTENSION MANAGEMENT (GraphQL) ------------------------------------------
-# The REST /extension/* endpoints are deprecated in recent Suwayomi builds, so
-# extension management goes through GraphQL, which is stable across versions.
+# Extension management goes through GraphQL. NOTE: in Suwayomi v2.x the legacy
+# `settings.extensionRepos` field is inert — repos MUST be registered as
+# "extension stores" via addExtensionStore before fetchExtensions returns
+# anything. That was the bug: setting extensionRepos alone did nothing.
+
+# Default repo(s) auto-registered on refresh so an admin gets a populated list
+# out of the box. keiyoushi is the actively-maintained community index.
+DEFAULT_EXTENSION_REPOS = [
+    "https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json",
+]
+
+
+def list_extension_stores_gql() -> list:
+    """Return the indexUrls of every registered extension store (repo)."""
+    query = "{ extensionStores { nodes { indexUrl } } }"
+    data = graphql(query)
+    nodes = (((data.get("data") or {}).get("extensionStores") or {}).get("nodes")) or []
+    return [n.get("indexUrl") for n in nodes if isinstance(n, dict) and n.get("indexUrl")]
+
+
+def add_extension_store_gql(index_url: str) -> dict:
+    """Register a repo as an extension store. Idempotent on the Suwayomi side."""
+    query = """
+    mutation AddStore($url: String!) {
+      addExtensionStore(input: {indexUrl: $url}) { clientMutationId }
+    }
+    """
+    return graphql(query, {"url": index_url})
+
+
+def remove_extension_store_gql(index_url: str) -> dict:
+    """Unregister a repo. index_url must match the stored (normalised) value."""
+    query = """
+    mutation RemoveStore($url: String!) {
+      removeExtensionStore(input: {indexUrl: $url}) { clientMutationId }
+    }
+    """
+    return graphql(query, {"url": index_url})
+
 
 def list_extensions_gql() -> list:
     """
