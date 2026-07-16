@@ -26,7 +26,7 @@ jobs:
     name: Secret Scan (Gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0          # full history, not just the latest commit
 
@@ -46,7 +46,7 @@ jobs:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Semgrep
         run: pip install semgrep
@@ -102,7 +102,7 @@ jobs:
     name: SCA — Python (pip-audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -142,7 +142,7 @@ jobs:
     name: SCA — Node.js (npm audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -182,7 +182,7 @@ jobs:
             context: ./frontend
             build-args: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build ${{ matrix.service }} image
         run: docker build ${{ matrix.build-args }} -t manga-${{ matrix.service }}:scan ${{ matrix.context }}
