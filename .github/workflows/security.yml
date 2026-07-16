@@ -162,6 +162,11 @@ jobs:
   # Builds both Docker images and scans them for OS/library CVEs.
   # Uploads CRITICAL/HIGH findings to the GitHub Security tab as SARIF.
   # Fails on any unfixed CRITICAL or HIGH vulnerability.
+  #
+  # IMPORTANT: build with the SAME args as build-push/deploy so we scan the
+  # artifact we actually ship. The backend deploys with INSTALL_ML=false (the
+  # 1 GB VM can't fit torch), so the heavy ML stack must not be in the scanned
+  # image either — otherwise Trivy fails on ML-only CVEs that never reach prod.
   container-scan:
     name: Container Scan (Trivy)
     runs-on: ubuntu-latest
@@ -171,13 +176,15 @@ jobs:
         include:
           - service: backend
             context: ./backend
+            build-args: --build-arg INSTALL_ML=false
           - service: frontend
             context: ./frontend
+            build-args: ""
     steps:
       - uses: actions/checkout@v4
 
       - name: Build ${{ matrix.service }} image
-        run: docker build -t manga-${{ matrix.service }}:scan ${{ matrix.context }}
+        run: docker build ${{ matrix.build-args }} -t manga-${{ matrix.service }}:scan ${{ matrix.context }}
 
       - name: Run Trivy — collect SARIF
         uses: aquasecurity/trivy-action@v0.36.0
