@@ -26,11 +26,13 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4567/api/v1/settings/about/"]
-      interval: 30s
+      # The Suwayomi image ships curl, not wget. Generous start_period +
+      # retries because the JVM is slow to boot on 1 vCPU / 1 GB.
+      test: ["CMD", "curl", "-fsS", "http://localhost:4567/api/v1/settings/about/"]
+      interval: 20s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 6
+      start_period: 150s
 
   postgres:
     image: postgres:16-alpine
