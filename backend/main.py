@@ -56,7 +56,7 @@ import ratings
 import bookmarks
 import editors_choice
 import history
-from routes import home, catalog, manga as manga_routes, download as download_routes, html_reader as html_reader_routes
+from routes import home, catalog, manga as manga_routes, download as download_routes, html_reader as html_reader_routes, extensions as extension_routes
 
 _SUWAYOMI_URL = os.getenv("SUWAYOMI_URL", "http://127.0.0.1:4567")
 
@@ -111,6 +111,7 @@ app.include_router(history.router)
 app.include_router(home.router)
 app.include_router(catalog.router)
 app.include_router(manga_routes.router)
+app.include_router(extension_routes.router)
 app.include_router(download_routes.router)
 app.include_router(html_reader_routes.router)
 

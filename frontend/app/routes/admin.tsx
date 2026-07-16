@@ -195,6 +195,21 @@ export default function AdminPage() {
           Signed in as <span className="text-orange-400 font-medium">{user.username}</span>
         </p>
 
+        {/* Section: Extensions */}
+        <Link
+          to="/admin/extensions"
+          className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-2xl p-6 mb-6 transition-colors group"
+        >
+          <span className="text-orange-400 text-lg">🧩</span>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-bold text-white">Extensions</h2>
+            <p className="text-zinc-500 text-sm">
+              Install source extensions and sync their manga into the catalog.
+            </p>
+          </div>
+          <span className="text-zinc-600 group-hover:text-orange-400 transition-colors">→</span>
+        </Link>
+
         {/* Section: Editor's Choice */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-2 mb-1">

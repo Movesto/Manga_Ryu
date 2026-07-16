@@ -13,6 +13,7 @@ export default [
   route("signout",              "routes/signout.tsx"),
   route("bookmark",             "routes/bookmark.tsx"),
   route("admin",                 "routes/admin.tsx"),
+  route("admin/extensions",      "routes/admin.extensions.tsx"),
   route("source/:sourceId",     "routes/source.$sourceId.tsx"),
   route("manga/:mangaId",                          "routes/manga.$mangaId.tsx"),
   route("manga/:mangaId/chapter/:chapterId",       "routes/manga.$mangaId.chapter.$chapterId.tsx"),

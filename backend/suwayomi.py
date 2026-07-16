@@ -4,6 +4,22 @@ import requests
 _SUWAYOMI = os.getenv("SUWAYOMI_URL", "http://127.0.0.1:4567")
 BASE_URL = f"{_SUWAYOMI}/api/v1"
 
+
+def graphql(query: str, variables: dict | None = None, timeout: int = 20) -> dict:
+    """
+    POST a GraphQL query/mutation to Suwayomi. Always returns a dict; on network
+    failure returns an {"errors": [...]} shape so callers can treat it uniformly.
+    """
+    try:
+        resp = requests.post(
+            f"{_SUWAYOMI}/api/graphql",
+            json={"query": query, "variables": variables or {}},
+            timeout=timeout,
+        )
+        return resp.json()
+    except Exception as e:
+        return {"errors": [{"message": str(e)}]}
+
 def safe_fetch(endpoint):
     """
     A helper function that catches HTML errors and prevents 
@@ -192,6 +208,54 @@ def install_extension(pkg_name: str):
     # We use requests.post() here instead of requests.get()
     response = requests.post(f"{BASE_URL}/{endpoint}")
     return response.json()
+
+
+# --- EXTENSION MANAGEMENT (GraphQL) ------------------------------------------
+# The REST /extension/* endpoints are deprecated in recent Suwayomi builds, so
+# extension management goes through GraphQL, which is stable across versions.
+
+def list_extensions_gql() -> list:
+    """
+    Return every extension Suwayomi knows about (from the configured repos),
+    installed or not. Empty list on error.
+    """
+    query = """
+    query {
+      extensions {
+        nodes {
+          pkgName name lang versionName iconUrl
+          isInstalled isObsolete hasUpdate isNsfw repo
+        }
+      }
+    }
+    """
+    data = graphql(query)
+    nodes = (((data.get("data") or {}).get("extensions") or {}).get("nodes")) or []
+    return nodes if isinstance(nodes, list) else []
+
+
+def fetch_extensions_gql() -> dict:
+    """
+    Refresh the extension catalog from the configured repos. Slow — it pulls the
+    repo index over the network — so it gets a generous timeout.
+    """
+    query = "mutation { fetchExtensions(input: {}) { extensions { pkgName } } }"
+    return graphql(query, timeout=60)
+
+
+def set_extension_install_gql(pkg_name: str, install: bool) -> dict:
+    """
+    Install (install=True) or uninstall (install=False) an extension by pkgName.
+    """
+    query = """
+    mutation SetInstall($id: String!, $patch: UpdateExtensionPatchInput!) {
+      updateExtension(input: {id: $id, patch: $patch}) {
+        extension { pkgName isInstalled hasUpdate }
+      }
+    }
+    """
+    patch = {"install": True} if install else {"uninstall": True}
+    return graphql(query, {"id": pkg_name, "patch": patch})
 
 def get_latest_manga(source_id: str, page: int = 1):
     """Fetches the latest updated manga from a specific source."""
