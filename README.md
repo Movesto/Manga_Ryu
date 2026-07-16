@@ -49,22 +49,25 @@ Browser ──> Cloudflare Tunnel ──> React Router v7 (SSR, node)
 
 ## Deployment
 
-The whole production setup is one command on a fresh Ubuntu VM (built for
-Oracle Cloud's free `VM.Standard.E2.1.Micro`, 1 GB RAM):
+The production stack is self-contained — the images are **built on the VM**
+from the repo (no registry, no auth), and ingress is a Cloudflare Tunnel (no
+inbound ports). On a fresh Ubuntu VM (built for Oracle Cloud's free
+`VM.Standard.E2.1.Micro`, 1 GB RAM):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Movesto/Manga_Ryu/main/infrastructure/oracle-setup.sh | bash
+sudo apt-get update && sudo apt-get install -y git
+git clone https://github.com/Movesto/Manga_Ryu.git ~/manga-ryu
+bash ~/manga-ryu/infrastructure/oracle-setup.sh
 ```
 
-The script is idempotent and does everything: swap file, Docker, repo
-checkout, secret generation, Cloudflare Tunnel prompt, image pull from GHCR,
-launch, and health checks. When it finishes, it tells you the two remaining
-clicks (tunnel hostname → `frontend:3000`, register the first account —
-it becomes admin).
+The idempotent script does everything: swap file, Docker, secret generation,
+Cloudflare Tunnel prompt, **builds** the backend + frontend images, launches
+the stack, and waits for health. When it finishes it tells you the two
+remaining clicks (tunnel hostname → `frontend:3000`, register the first
+account — it becomes admin).
 
-Every push to `main` then deploys automatically: CI builds the images, scans
-them with Trivy, pushes them to GHCR, and the VM pulls and restarts — the
-scanned artifact **is** the deployed artifact.
+Ship updates by re-running it: `git pull && bash infrastructure/oracle-setup.sh`.
+CI stays green as a quality gate (scans + lint/test/build) but does not deploy.
 
 Details, sizing rationale, and troubleshooting:
 [`infrastructure/ORACLE_DEPLOY.md`](infrastructure/ORACLE_DEPLOY.md)
@@ -207,7 +210,6 @@ Manga_Ryu/
 | `SUWAYOMI_URL` | `http://127.0.0.1:4567` | Suwayomi server base URL |
 | `ACCESS_TOKEN_MINUTES` | `30` | Access-token lifetime (sessions renew via refresh token) |
 | `REFRESH_TOKEN_DAYS` | `30` | Refresh-token lifetime |
-| `IMAGE_TAG` | `latest` | GHCR image tag to deploy (pin to a commit SHA to roll back) |
 | `KCC_PATH` | empty (disabled) | Path to `kcc-c2e` for Kindle EPUB conversion |
 | `TAGGER_MODEL_DIR` | `../ml/model` | Trained genre-tagger model directory |
 | `TAGGER_THRESHOLD` | `0.30` | Tagger confidence cutoff (0–1) |

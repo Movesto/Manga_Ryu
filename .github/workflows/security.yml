@@ -163,10 +163,11 @@ jobs:
   # Uploads CRITICAL/HIGH findings to the GitHub Security tab as SARIF.
   # Fails on any unfixed CRITICAL or HIGH vulnerability.
   #
-  # IMPORTANT: build with the SAME args as build-push/deploy so we scan the
-  # artifact we actually ship. The backend deploys with INSTALL_ML=false (the
-  # 1 GB VM can't fit torch), so the heavy ML stack must not be in the scanned
-  # image either — otherwise Trivy fails on ML-only CVEs that never reach prod.
+  # IMPORTANT: build with the SAME args the VM uses (see docker-compose.prod.yml)
+  # so we scan the artifact we actually ship. The backend runs INSTALL_ML=false
+  # (the 1 GB VM can't fit torch), so the heavy ML stack must not be in the
+  # scanned image either — otherwise Trivy fails on ML-only CVEs that never
+  # reach prod.
   container-scan:
     name: Container Scan (Trivy)
     runs-on: ubuntu-latest
@@ -214,69 +215,8 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: true   # DB already fetched by the first Trivy step
 
-  # ── Job 5: Build & Push Images ────────────────────────────────────────────
-  # Publishes the images that Job 4 just scanned so the deployed artifact IS
-  # the scanned artifact. Backend is built without the ML tagger deps
-  # (INSTALL_ML=false) — the 1 GB Oracle VM can't fit torch.
-  build-push:
-    name: Push Images to GHCR
-    needs: [secrets, sast, sca-backend, sca-frontend, container-scan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - service: backend
-            context: ./backend
-            build-args: INSTALL_ML=false
-          - service: frontend
-            context: ./frontend
-            build-args: ""
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          push: true
-          build-args: ${{ matrix.build-args }}
-          tags: |
-            ghcr.io/movesto/manga-ryu-${{ matrix.service }}:latest
-            ghcr.io/movesto/manga-ryu-${{ matrix.service }}:${{ github.sha }}
-
-  # ── Job 6: Deploy ─────────────────────────────────────────────────────────
-  # Pulls the freshly pushed images on the Oracle Cloud VM and restarts the
-  # compose stack. Requires three GitHub secrets:
-  #   SSH_HOST        — VM public IP
-  #   SSH_USER        — VM login user (e.g. ubuntu)
-  #   SSH_PRIVATE_KEY — private key matching the VM's authorized key
-  deploy:
-    name: Deploy to Oracle Cloud
-    needs: [build-push]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            cd ~/manga-ryu
-            git pull origin main
-            cd infrastructure
-            docker compose -f docker-compose.prod.yml --env-file .env pull backend frontend
-            docker compose -f docker-compose.prod.yml --env-file .env up -d
-            docker image prune -f
+  # Deployment is intentionally NOT automated from CI. The stack is built and
+  # run on the VM itself (no registry, no SSH-from-GitHub) — see
+  # infrastructure/oracle-setup.sh and ORACLE_DEPLOY.md. To ship new code:
+  #   ssh <vm> 'cd ~/manga-ryu && git pull && bash infrastructure/oracle-setup.sh'
+  # This workflow's job is to gate that: scans must be green before you deploy.

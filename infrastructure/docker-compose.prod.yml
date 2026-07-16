@@ -1,9 +1,11 @@
 # Production stack for the Oracle Cloud VM.Standard.E2.1.Micro (1 OCPU / 1 GB).
 #
-#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
-# Sized for 1 GB RAM + a 2 GB swap file (see oracle-setup.sh):
-#   - images are pulled from GHCR (built by CI without the ML tagger deps)
+# Self-contained: the backend and frontend images are BUILT ON THE VM from the
+# cloned repo (no registry, no auth). The other images are public. Sized for
+# 1 GB RAM + a 2 GB swap file (see oracle-setup.sh):
+#   - backend built without the ML tagger deps (torch won't fit)
 #   - every service has a memory cap; Suwayomi's JVM heap is bounded
 #   - nothing binds a host port — ingress is exclusively the Cloudflare Tunnel
 
@@ -54,7 +56,11 @@ services:
       start_period: 10s
 
   backend:
-    image: ghcr.io/movesto/manga-ryu-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ../backend
+      args:
+        INSTALL_ML: "false"   # torch etc. won't fit the 1 GB VM
+    image: manga-ryu-backend:local
     container_name: manga-backend
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-manga}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-manga_db}
@@ -67,7 +73,7 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
-      SENTRY_RELEASE: ${IMAGE_TAG:-latest}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-production}
     expose:
       - "8000"
     networks:
@@ -88,7 +94,9 @@ services:
       start_period: 20s
 
   frontend:
-    image: ghcr.io/movesto/manga-ryu-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ../frontend
+    image: manga-ryu-frontend:local
     container_name: manga-frontend
     environment:
       API_URL: http://backend:8000
@@ -98,7 +106,7 @@ services:
       SENTRY_DSN_FRONTEND: ${SENTRY_DSN_FRONTEND:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
-      SENTRY_RELEASE: ${IMAGE_TAG:-latest}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-production}
     expose:
       - "3000"
     networks:

@@ -5,13 +5,16 @@ Cloud VM. Target shape: **VM.Standard.E2.1.Micro — 1 OCPU (x86), 1 GB RAM**.
 Ingress is a **Cloudflare Tunnel** (outbound-only), so no Oracle security-list
 or iptables changes are needed at all.
 
-> **1 GB RAM is tight.** The stack fits because: images are built without the
-> ML tagger (torch alone exceeds the whole VM), every container has a memory
-> cap, Suwayomi's JVM heap is bounded to 384 MB, and the setup script creates
-> a 2 GB swap file. If **VM.Standard.A1.Flex** capacity opens up in your
-> region (4 OCPU / 24 GB, also free), prefer it — the same compose file works;
-> you'd only need arm64 images (add `platforms: linux/amd64,linux/arm64` to
-> the build-push job).
+The backend and frontend images are **built on the VM** from this repo — no
+container registry, no image auth, nothing to log into. The other images
+(Suwayomi, Postgres, Netdata, cloudflared) are public.
+
+> **1 GB RAM is tight.** The stack fits because: the backend is built without
+> the ML tagger (torch alone exceeds the whole VM), every container has a
+> memory cap, Suwayomi's JVM heap is bounded to 384 MB, and the setup script
+> creates a 2 GB swap file (which also covers the frontend build). If
+> **VM.Standard.A1.Flex** capacity opens up in your region (4 OCPU / 24 GB,
+> also free), prefer it — the same compose file works as-is.
 
 ---
 
@@ -26,23 +29,26 @@ or iptables changes are needed at all.
 
 ## 2. Bootstrap the VM
 
-Get the tunnel token first (step 3), SSH in as `ubuntu`, then:
+Get the tunnel token first (step 3), SSH in as `ubuntu`, then clone the repo
+and run the setup script (it builds the images from the checkout, so it must
+run from inside the repo — don't pipe it via `curl`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Movesto/Manga_Ryu/main/infrastructure/oracle-setup.sh | bash
+sudo apt-get update && sudo apt-get install -y git
+git clone https://github.com/Movesto/Manga_Ryu.git ~/manga-ryu
+bash ~/manga-ryu/infrastructure/oracle-setup.sh
 ```
 
 The script is idempotent (safe to re-run) and does everything: 2 GB swap,
-Docker + Compose, container log rotation, repo checkout to `~/manga-ryu`,
-`.env` with **auto-generated** `POSTGRES_PASSWORD` and `JWT_SECRET`, a prompt
-for the `TUNNEL_TOKEN`, then pulls the GHCR images, starts the stack, and
-waits for every service to report healthy.
+Docker + Compose, container log rotation, `.env` with **auto-generated**
+`POSTGRES_PASSWORD` and `JWT_SECRET`, a prompt for the `TUNNEL_TOKEN` (and
+optionally Netdata), then **builds** the backend + frontend images on the VM,
+starts the stack, and waits for every service to report healthy.
 
-Unattended run (no prompt):
+Unattended run (no prompts):
 
 ```bash
-TUNNEL_TOKEN=eyJh... bash oracle-setup.sh        # or --no-start to skip launch
-```
+TUNNEL_TOKEN=eyJh... bash ~/manga-ryu/infrastructure/oracle-setup.sh   # or --no-start
 
 ## 3. Cloudflare Tunnel
 
@@ -59,18 +65,14 @@ tunnel on the Optiplex still owns that hostname, delete its route first.
 
 ## 4. First start
 
-The setup script already pulled and started the stack. Prerequisite: the
-images must exist on GHCR — they are pushed by the security pipeline on every
-push to `main` (make the two packages **public** in GitHub → Packages →
-package settings, or `docker login ghcr.io` on the VM with a read-only PAT).
-
-To start/inspect manually:
+The setup script already built the images and started the stack. To
+build/start/inspect manually:
 
 ```bash
 cd ~/manga-ryu/infrastructure
-docker compose -f docker-compose.prod.yml --env-file .env up -d
-docker compose -f docker-compose.prod.yml ps        # wait for healthy
-docker compose -f docker-compose.prod.yml logs -f backend
+sudo docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+sudo docker compose -f docker-compose.prod.yml ps        # wait for healthy
+sudo docker compose -f docker-compose.prod.yml logs -f backend
 ```
 
 **Fresh-start behavior:** the backend sees an empty `manga` table and kicks
@@ -90,20 +92,24 @@ docker compose -f docker-compose.prod.yml exec suwayomi true  # (container is on
 # then browse http://localhost:4567 through the SSH tunnel and install extensions
 ```
 
-## 5. CI/CD
+## 5. Shipping new code
 
-Update the three repo secrets and pushes to `main` deploy automatically
-(after all security jobs pass):
+Deployment is **not** automated from CI (no registry to push to, no inbound
+SSH to open). To ship an update, pull and re-run the setup script on the VM —
+it rebuilds only what changed and restarts:
 
-| Secret | Value |
-|---|---|
-| `SSH_HOST` | VM public IP |
-| `SSH_USER` | `ubuntu` |
-| `SSH_PRIVATE_KEY` | key matching the VM's `authorized_keys` |
+```bash
+ssh ubuntu@<vm-ip> 'cd ~/manga-ryu && git pull && bash infrastructure/oracle-setup.sh'
+```
 
-The pipeline now pushes the **scanned** images to GHCR
-(`manga-ryu-backend` / `manga-ryu-frontend`) and the deploy job runs
-`docker compose pull && up -d` on the VM.
+CI (`.github/workflows/security.yml` + `ci.yml`) still runs on every push as a
+**quality gate** — Gitleaks, Semgrep, pip-audit, npm audit, Trivy (it builds
+and scans the same slim images), plus lint/typecheck/tests. Keep those green
+before you deploy.
+
+If you later want fully hands-off deploys without opening a port, add a
+`Watchtower`-style poller or a cron `git pull && … up -d --build` on the VM —
+both are outbound-only and fit the tunnel design.
 
 ## 6. Observability (Sentry + Netdata)
 
@@ -163,9 +169,9 @@ either drop its `mem_limit`/history further or comment the service out — the
 rest of the stack doesn't depend on it.
 
 **Do not** mount an ML model or set `TAGGER_MODEL_DIR` on this shape: the
-GHCR backend image has no torch, and installing it would not fit anyway. Run
-tagging offline (see `ml/`) against the database if needed, from another
-machine.
+backend image is built with `INSTALL_ML=false` (no torch), and installing it
+would not fit anyway. Run tagging offline (see `ml/`) against the database
+from another machine if needed.
 
 ## Known limitations on this shape
 

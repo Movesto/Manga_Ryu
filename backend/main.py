@@ -28,7 +28,7 @@ if _sentry_dsn:
     sentry_sdk.init(
         dsn=_sentry_dsn,
         environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
-        release=os.getenv("SENTRY_RELEASE") or os.getenv("IMAGE_TAG"),
+        release=os.getenv("SENTRY_RELEASE"),
         traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
         send_default_pii=False,  # don't ship request bodies / auth headers
     )

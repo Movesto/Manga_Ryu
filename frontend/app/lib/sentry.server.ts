@@ -14,7 +14,7 @@ export function initSentryServer(): void {
   Sentry.init({
     dsn,
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
-    release: process.env.SENTRY_RELEASE || process.env.IMAGE_TAG || undefined,
+    release: process.env.SENTRY_RELEASE || undefined,
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? "0.1"),
   });
 }
@@ -41,7 +41,7 @@ export function sentryClientConfig() {
   return {
     dsn,
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
-    release: process.env.SENTRY_RELEASE || process.env.IMAGE_TAG || undefined,
+    release: process.env.SENTRY_RELEASE || undefined,
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? "0.1"),
   };
 }
