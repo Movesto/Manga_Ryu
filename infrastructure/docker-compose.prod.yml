@@ -140,37 +140,9 @@ services:
     restart: unless-stopped
     mem_limit: 64m
 
-  # Observability: lean Netdata agent streaming to Netdata Cloud.
-  # Config in ./netdata/netdata.conf disables ML/eBPF/apps to fit the 1 GB box.
-  # Claims to Cloud only when NETDATA_CLAIM_TOKEN is set; otherwise it runs
-  # standalone (dashboard reachable inside the network on :19999).
-  netdata:
-    image: netdata/netdata:stable
-    container_name: manga-netdata
-    hostname: ${NETDATA_HOSTNAME:-manga-ryu}
-    pid: host
-    cap_add:
-      - SYS_PTRACE
-      - SYS_ADMIN
-    security_opt:
-      - apparmor:unconfined
-    environment:
-      NETDATA_CLAIM_TOKEN: ${NETDATA_CLAIM_TOKEN:-}
-      NETDATA_CLAIM_URL: ${NETDATA_CLAIM_URL:-https://app.netdata.cloud}
-      NETDATA_CLAIM_ROOMS: ${NETDATA_CLAIM_ROOMS:-}
-      DO_NOT_TRACK: "1"
-    volumes:
-      - netdata-lib:/var/lib/netdata      # persists the Cloud claim across restarts
-      - netdata-cache:/var/cache/netdata
-      - ./netdata/netdata.conf:/etc/netdata/netdata.conf:ro
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /etc/os-release:/host/etc/os-release:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - internal
-    restart: unless-stopped
-    mem_limit: 150m
+  # Netdata was removed: on the 1 GB / throttled free-tier micro its ~45 MB RSS
+  # plus its own CPU polling pushed the box further into swap. Re-add if you move
+  # to a larger instance. (Old git history has the full service definition.)
 
 networks:
   internal:
@@ -179,5 +151,3 @@ networks:
 volumes:
   postgres-data:
   suwayomi-data:
-  netdata-lib:
-  netdata-cache:

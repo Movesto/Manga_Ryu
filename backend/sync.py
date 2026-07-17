@@ -13,9 +13,12 @@ import helpers
 import tagger
 from psycopg2.extras import execute_values
 
-MAX_POPULAR_PAGES = 25   # up to 25 × 20 = 500 manga per source
-MAX_LATEST_PAGES  = 15
-MAX_COMPLETED_PAGES = 15
+# Tuned down for the throttled 1 GB free-tier box: a full sync used to pull
+# 55 pages/source across all sources, pegging the CPU (which is burst-throttled)
+# and freezing the site for the duration. Fewer pages = shorter, gentler syncs.
+MAX_POPULAR_PAGES = 8    # up to 8 × 20 = 160 manga per source
+MAX_LATEST_PAGES  = 5
+MAX_COMPLETED_PAGES = 5
 
 _lock    = threading.Lock()
 _running = False

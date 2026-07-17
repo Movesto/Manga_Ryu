@@ -58,7 +58,7 @@ def _live_search(q: str) -> list:
         except Exception:
             return []
 
-    with ThreadPoolExecutor(max_workers=20) as ex:
+    with ThreadPoolExecutor(max_workers=6) as ex:
         futures = [ex.submit(_search_one, s) for s in active]
         for fut in as_completed(futures, timeout=15):
             try:
