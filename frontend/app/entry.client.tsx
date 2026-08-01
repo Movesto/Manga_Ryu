@@ -44,13 +44,14 @@ startTransition(() => {
   );
 });
 
-// Register the PWA service worker after hydration so it never delays first paint.
-// Enables install ("Add to Home Screen"), offline shell, and cache-first serving
-// of build assets + manga images. Only runs in production (HTTPS/localhost).
+// Register the PWA service worker so the site is installable ("Add to Home
+// Screen"), works offline (shell + cached chapters), and serves assets/images
+// cache-first. Deferred a tick so it doesn't compete with hydration — but NOT
+// gated on window "load", which can stall indefinitely behind slow images.
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
+  setTimeout(() => {
     navigator.serviceWorker.register("/sw.js").catch(() => {
       /* SW registration failing must never break the app */
     });
-  });
+  }, 1200);
 }
