@@ -1,21 +1,21 @@
-FROM node:22-alpine AS development-dependencies-env
+FROM node:25-alpine AS development-dependencies-env
 # Copy manifests first so the npm ci layer caches across source changes
 COPY ./package.json package-lock.json /app/
 WORKDIR /app
 RUN npm ci
 
-FROM node:22-alpine AS production-dependencies-env
+FROM node:25-alpine AS production-dependencies-env
 COPY ./package.json package-lock.json /app/
 WORKDIR /app
 RUN npm ci --omit=dev
 
-FROM node:22-alpine AS build-env
+FROM node:25-alpine AS build-env
 COPY . /app/
 COPY --from=development-dependencies-env /app/node_modules /app/node_modules
 WORKDIR /app
 RUN npm run build
 
-FROM node:22-alpine
+FROM node:25-alpine
 # node:alpine ships with a built-in 'node' user (uid 1000) — use it.
 # Strip the bundled npm CLI: the runtime only runs the server, and npm's
 # vendored dependencies (picomatch, sigstore, …) otherwise trip container
