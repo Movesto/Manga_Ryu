@@ -3,22 +3,17 @@
   "short_name": "Manga Ryu",
   "description": "Read manga, manhwa and manhua online — powered by Manga Ryu.",
   "start_url": "/",
+  "scope": "/",
+  "id": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#09090b",
   "theme_color": "#f97316",
   "icons": [
-    {
-      "src": "/favicon.ico",
-      "sizes": "48x48",
-      "type": "image/x-icon"
-    },
-    {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%2318181b'/%3E%3Cpath d='M96 18C71 18 50 37 46 65C42 91 58 109 70 134C78 151 74 174 62 193C82 180 106 160 113 136C117 155 113 179 96 200C116 187 139 163 146 133C154 103 150 67 132 44C124 32 124 13 137 0C120 3 106 10 96 18Z' fill='%23f97316' transform='scale(0.85) translate(14,14)'/%3E%3Cpath d='M93 52C85 74 85 99 93 121C97 134 97 149 90 170C108 151 115 128 111 105C107 83 100 62 93 52Z' fill='%23fbbf24' transform='scale(0.85) translate(14,14)'/%3E%3C/svg%3E",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "/favicon.ico", "sizes": "48x48", "type": "image/x-icon" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "screenshots": [],
   "categories": ["entertainment", "books"]

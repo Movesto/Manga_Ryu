@@ -43,3 +43,14 @@ startTransition(() => {
     </StrictMode>,
   );
 });
+
+// Register the PWA service worker after hydration so it never delays first paint.
+// Enables install ("Add to Home Screen"), offline shell, and cache-first serving
+// of build assets + manga images. Only runs in production (HTTPS/localhost).
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* SW registration failing must never break the app */
+    });
+  });
+}
