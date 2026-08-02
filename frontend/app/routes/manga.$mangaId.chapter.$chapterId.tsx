@@ -77,6 +77,27 @@ const WIDTH_LABEL: Record<WidthMode, string> = {
   full:        "Full width",
 };
 
+// ── download glyphs ────────────────────────────────────────────────────────────
+
+function DownloadGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function DownloadedGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="8 12 11 15 16 9" />
+    </svg>
+  );
+}
+
 // ── page ─────────────────────────────────────────────────────────────────────
 
 export default function ChapterReader() {
@@ -86,6 +107,48 @@ export default function ChapterReader() {
   const navigate = useNavigate();
   const { revalidate } = useRevalidator();
   const [widthMode, setWidthMode] = useState<WidthMode>("comfortable");
+
+  // ── offline download state ───────────────────────────────────────────────
+  const [dlState, setDlState] = useState<"idle" | "saved" | "downloading">("idle");
+  const [dlProgress, setDlProgress] = useState({ done: 0, total: 0 });
+  const chapterIdStr = String(currentChapter?.id ?? "");
+
+  useEffect(() => {
+    if (!chapterIdStr) return;
+    import("../lib/downloads").then((dl) =>
+      dl.isDownloaded(chapterIdStr).then((yes) => setDlState(yes ? "saved" : "idle")),
+    );
+  }, [chapterIdStr]);
+
+  async function handleDownload() {
+    if (dlState === "downloading" || !chapterIdStr) return;
+    const dl = await import("../lib/downloads");
+    if (dlState === "saved") {
+      await dl.deleteChapter(chapterIdStr);
+      setDlState("idle");
+      return;
+    }
+    setDlState("downloading");
+    setDlProgress({ done: 0, total: pages.length });
+    try {
+      await dl.downloadChapter(
+        {
+          id: chapterIdStr,
+          mangaId: String(mangaId),
+          mangaTitle: manga?.title ?? "",
+          mangaThumb: manga?.thumbnailUrl ? `/media${manga.thumbnailUrl}` : "",
+          chapterName: currentChapter?.name ?? "",
+          chapterNumber: currentChapter?.chapterNumber ?? 0,
+          pages,
+        },
+        (done, total) => setDlProgress({ done, total }),
+      );
+      setDlState("saved");
+    } catch {
+      setDlState("idle");
+    }
+  }
+
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -232,8 +295,31 @@ export default function ChapterReader() {
               {chapterName}
             </span>
 
-            {/* Controls: width + prev/next */}
+            {/* Controls: download + width + prev/next */}
             <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={handleDownload}
+                title={
+                  dlState === "saved" ? "Downloaded — tap to remove"
+                  : dlState === "downloading" ? "Downloading…"
+                  : "Download for offline"
+                }
+                className={`p-2 rounded-lg transition-colors ${
+                  dlState === "saved" ? "text-orange-400 hover:text-orange-300 hover:bg-zinc-800"
+                  : "text-zinc-500 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                {dlState === "downloading" ? (
+                  <span className="text-[11px] font-semibold tabular-nums">
+                    {dlProgress.total ? Math.round((dlProgress.done / dlProgress.total) * 100) : 0}%
+                  </span>
+                ) : dlState === "saved" ? (
+                  <DownloadedGlyph />
+                ) : (
+                  <DownloadGlyph />
+                )}
+              </button>
+
               <button
                 onClick={cycleWidth}
                 title={WIDTH_LABEL[widthMode]}

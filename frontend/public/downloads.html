@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090b" />
+    <title>Downloads — Manga Ryu</title>
+    <style>
+      :root { --bg:#09090b; --surface:#18181b; --surface2:#232327; --border:#2a2a30; --text:#f4f4f5; --muted:#8a8a93; --accent:#f97316; }
+      * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+      html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+      a,button { font:inherit; color:inherit; }
+      .wrap { max-width:820px; margin:0 auto; padding-bottom:40px; }
+      .bar { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; padding:14px 16px; background:rgba(9,9,11,.9); backdrop-filter:blur(8px); border-bottom:1px solid var(--border); }
+      .bar h1 { font-size:18px; margin:0; font-weight:700; }
+      .bar .sp { flex:1; }
+      .btn { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:10px; cursor:pointer; font-size:14px; }
+      .btn.danger { color:#f87171; border-color:#f8717144; }
+      .btn.link { background:none; border:none; color:var(--accent); padding:6px; }
+      .storage { padding:10px 16px; font-size:12px; color:var(--muted); }
+      .track { height:6px; background:var(--surface2); border-radius:99px; overflow:hidden; margin-top:6px; }
+      .track > i { display:block; height:100%; background:var(--accent); }
+      .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:12px 16px; }
+      @media (max-width:440px){ .grid{ grid-template-columns:repeat(2,1fr);} }
+      .card { cursor:pointer; }
+      .card img { width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:10px; background:var(--surface2); display:block; }
+      .card .t { font-size:12px; margin-top:6px; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+      .card .n { font-size:11px; color:var(--muted); }
+      .row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
+      .row .m { flex:1; min-width:0; }
+      .row .m .cn { font-size:14px; }
+      .row .m .cs { font-size:11px; color:var(--muted); }
+      .empty { text-align:center; color:var(--muted); padding:60px 20px; }
+      .empty .big { font-size:44px; }
+      .reader { background:#000; min-height:100vh; }
+      .reader img { width:100%; display:block; }
+      .hidden { display:none; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="bar">
+        <button id="back" class="btn link hidden">‹ Back</button>
+        <h1 id="title">Downloads</h1>
+        <span class="sp"></span>
+        <a id="online" class="btn link" href="/">Go online ↗</a>
+      </div>
+      <div id="storage" class="storage"></div>
+      <div id="view"></div>
+    </div>
+
+    <script>
+      const DB_NAME="ryu-dl", DB_VERSION=1, STORE="chapters", DL_CACHE="ryu-dl-images";
+      const view=document.getElementById("view"), titleEl=document.getElementById("title"),
+            backEl=document.getElementById("back"), storageEl=document.getElementById("storage");
+      const objectUrls=[];
+      function freeUrls(){ objectUrls.forEach(URL.revokeObjectURL); objectUrls.length=0; }
+
+      function openDB(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,DB_VERSION);
+        r.onupgradeneeded=()=>{ const db=r.result; if(!db.objectStoreNames.contains(STORE)){ const os=db.createObjectStore(STORE,{keyPath:"id"}); os.createIndex("mangaId","mangaId",{unique:false}); } };
+        r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+      async function all(){ const db=await openDB(); return new Promise((res)=>{ const req=db.transaction(STORE,"readonly").objectStore(STORE).getAll(); req.onsuccess=()=>res(req.result||[]); req.onerror=()=>res([]); }); }
+      async function del(id){ const db=await openDB(); return new Promise((res)=>{ const req=db.transaction(STORE,"readwrite").objectStore(STORE).delete(id); req.onsuccess=()=>res(); req.onerror=()=>res(); }); }
+
+      async function cachedImg(el,url){ try{ const c=await caches.open(DL_CACHE); const r=await c.match(url); if(r){ const b=await r.blob(); const u=URL.createObjectURL(b); objectUrls.push(u); el.src=u; return; } }catch(e){} el.src=url; /* fall back to network if online */ }
+
+      async function deleteChapter(id){
+        const list=await all(); const rec=list.find(c=>c.id===id); if(!rec) return;
+        const others=list.filter(c=>c.id!==id);
+        const used=new Set(others.flatMap(c=>[c.mangaThumb,...c.pages]));
+        const cache=await caches.open(DL_CACHE);
+        for(const u of [...rec.pages, rec.mangaThumb]) if(!used.has(u)) await cache.delete(u);
+        await del(id);
+      }
+      async function deleteManga(mangaId){ const list=await all(); for(const c of list.filter(c=>c.mangaId===mangaId)) await deleteChapter(c.id); }
+
+      async function renderStorage(){
+        if(navigator.storage&&navigator.storage.estimate){ const e=await navigator.storage.estimate();
+          const mb=(b)=>(b/1048576).toFixed(0); const pct=e.quota?Math.min(100,(e.usage/e.quota)*100):0;
+          storageEl.innerHTML=`Using ${mb(e.usage||0)} MB${e.quota?` of ~${mb(e.quota)} MB available`:""}<div class="track"><i style="width:${pct}%"></i></div>`;
+        } else storageEl.textContent="";
+      }
+
+      async function showLibrary(){
+        freeUrls(); backEl.classList.add("hidden"); titleEl.textContent="Downloads"; storageEl.style.display="block";
+        await renderStorage();
+        const list=await all();
+        if(!list.length){ view.innerHTML=`<div class="empty"><div class="big">📥</div><p>No downloads yet.</p><p style="font-size:13px">Open a chapter online and tap the download icon to save it here for offline reading.</p></div>`; return; }
+        const byManga={}; for(const c of list){ (byManga[c.mangaId]=byManga[c.mangaId]||{title:c.mangaTitle,thumb:c.mangaThumb,mangaId:c.mangaId,chs:[]}).chs.push(c); }
+        const grid=document.createElement("div"); grid.className="grid";
+        for(const m of Object.values(byManga)){
+          const card=document.createElement("div"); card.className="card";
+          const img=document.createElement("img"); img.loading="lazy"; cachedImg(img,m.thumb);
+          const t=document.createElement("div"); t.className="t"; t.textContent=m.title||"Untitled";
+          const n=document.createElement("div"); n.className="n"; n.textContent=m.chs.length+" chapter"+(m.chs.length>1?"s":"");
+          card.append(img,t,n); card.onclick=()=>showManga(m.mangaId); grid.append(card);
+        }
+        view.innerHTML=""; view.append(grid);
+      }
+
+      async function showManga(mangaId){
+        freeUrls(); backEl.classList.remove("hidden"); backEl.onclick=showLibrary; storageEl.style.display="none";
+        const list=(await all()).filter(c=>c.mangaId===mangaId).sort((a,b)=>b.chapterNumber-a.chapterNumber);
+        titleEl.textContent=list[0]?.mangaTitle||"Manga";
+        view.innerHTML="";
+        const head=document.createElement("div"); head.style.cssText="padding:12px 16px";
+        const delAll=document.createElement("button"); delAll.className="btn danger"; delAll.textContent="Delete all chapters";
+        delAll.onclick=async()=>{ if(confirm("Delete all downloaded chapters for this manga?")){ await deleteManga(mangaId); showLibrary(); } };
+        head.append(delAll); view.append(head);
+        for(const c of list){
+          const row=document.createElement("div"); row.className="row";
+          const m=document.createElement("div"); m.className="m";
+          m.innerHTML=`<div class="cn">${(c.chapterName||("Chapter "+c.chapterNumber)).replace(/</g,"&lt;")}</div><div class="cs">${c.pageCount} pages · ${(c.bytes/1048576).toFixed(1)} MB</div>`;
+          m.style.cursor="pointer"; m.onclick=()=>showReader(c.id);
+          const d=document.createElement("button"); d.className="btn danger"; d.textContent="Delete";
+          d.onclick=async(e)=>{ e.stopPropagation(); await deleteChapter(c.id); showManga(mangaId); };
+          row.append(m,d); view.append(row);
+        }
+      }
+
+      async function showReader(id){
+        freeUrls(); const list=await all(); const c=list.find(x=>x.id===id); if(!c) return showLibrary();
+        backEl.classList.remove("hidden"); backEl.onclick=()=>showManga(c.mangaId); storageEl.style.display="none";
+        titleEl.textContent=c.chapterName||("Chapter "+c.chapterNumber);
+        const rd=document.createElement("div"); rd.className="reader";
+        for(const url of c.pages){ const img=document.createElement("img"); img.loading="lazy"; cachedImg(img,url); rd.append(img); }
+        view.innerHTML=""; view.append(rd); window.scrollTo(0,0);
+      }
+
+      showLibrary();
+    </script>
+  </body>
+</html>

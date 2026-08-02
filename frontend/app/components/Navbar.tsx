@@ -4,7 +4,7 @@ import type { AuthUser } from "../lib/auth.server";
 import { imgUrl } from "../lib/config";
 import {
   SearchIcon, XIcon, BookmarkIcon, CompassIcon, HistoryIcon,
-  UserIcon, LogOutIcon, ShieldIcon, MenuIcon, CloseIcon,
+  UserIcon, LogOutIcon, ShieldIcon, MenuIcon, CloseIcon, DownloadIcon,
 } from "./icons";
 import { MangaRyuLogo, SITE_NAME } from "./Logo";
 
@@ -199,9 +199,10 @@ function UserMenu({ user, csrf }: { user: AuthUser; csrf: string }) {
 // ── nav links ─────────────────────────────────────────────────────────────────
 
 const navLinks = [
-  { to: "/browse",   label: "Browse",    icon: <CompassIcon />,  authOnly: false },
-  { to: "/history",  label: "History",   icon: <HistoryIcon />,  authOnly: true  },
-  { to: "/library",  label: "Bookmarks", icon: <BookmarkIcon />, authOnly: true  },
+  { to: "/browse",        label: "Browse",    icon: <CompassIcon />,  authOnly: false, external: false },
+  { to: "/downloads.html", label: "Downloads", icon: <DownloadIcon />,  authOnly: false, external: true  },
+  { to: "/history",       label: "History",   icon: <HistoryIcon />,  authOnly: true,  external: false },
+  { to: "/library",       label: "Bookmarks", icon: <BookmarkIcon />, authOnly: true,  external: false },
 ];
 
 // ── navbar ────────────────────────────────────────────────────────────────────
@@ -264,20 +265,19 @@ export default function Navbar({ user, csrf, readingMode = false }: { user: Auth
 
             {/* Desktop nav */}
             <div className="hidden sm:flex items-center gap-1">
-              {navLinks.filter(l => !l.authOnly || user).map(({ to, label, icon }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    isActive(to)
-                      ? "text-orange-400 bg-zinc-800"
-                      : "text-zinc-400 hover:text-white hover:bg-zinc-800"
-                  }`}
-                >
-                  {icon}
-                  {label}
-                </Link>
-              ))}
+              {navLinks.filter(l => !l.authOnly || user).map(({ to, label, icon, external }) => {
+                const cls = `flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive(to)
+                    ? "text-orange-400 bg-zinc-800"
+                    : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`;
+                // Static (non-router) pages like downloads.html use a plain anchor.
+                return external ? (
+                  <a key={to} href={to} className={cls}>{icon}{label}</a>
+                ) : (
+                  <Link key={to} to={to} className={cls}>{icon}{label}</Link>
+                );
+              })}
 
               <button
                 onClick={() => setSearchOpen(true)}
@@ -334,20 +334,18 @@ export default function Navbar({ user, csrf, readingMode = false }: { user: Auth
         {/* Mobile dropdown */}
         {menuOpen && (
           <div className="sm:hidden border-t border-zinc-800 bg-zinc-950 px-4 pb-4 pt-2 flex flex-col gap-1">
-            {navLinks.filter(l => !l.authOnly || user).map(({ to, label, icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className={`flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-colors ${
-                  isActive(to)
-                    ? "text-orange-400 bg-zinc-800"
-                    : "text-zinc-300 hover:text-white hover:bg-zinc-800"
-                }`}
-              >
-                {icon}
-                {label}
-              </Link>
-            ))}
+            {navLinks.filter(l => !l.authOnly || user).map(({ to, label, icon, external }) => {
+              const cls = `flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-colors ${
+                isActive(to)
+                  ? "text-orange-400 bg-zinc-800"
+                  : "text-zinc-300 hover:text-white hover:bg-zinc-800"
+              }`;
+              return external ? (
+                <a key={to} href={to} className={cls}>{icon}{label}</a>
+              ) : (
+                <Link key={to} to={to} className={cls}>{icon}{label}</Link>
+              );
+            })}
             {user ? (
               <>
                 <div className="flex items-center gap-3 px-3 py-2.5 mt-1 rounded-md bg-zinc-900 border border-zinc-800">
