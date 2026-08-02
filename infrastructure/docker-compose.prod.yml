@@ -15,8 +15,11 @@ services:
     image: ghcr.io/suwayomi/suwayomi-server:stable
     container_name: suwayomi-engine
     environment:
-      # Bounded heap + SerialGC: kindest JVM setup for 1 vCPU / small RAM
-      JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true -Xmx384m -XX:+UseSerialGC"
+      # Trimmed for the 1 GB box. -Xmx256m caps the heap; MaxMetaspaceSize caps
+      # off-heap class metadata (36 installed extensions load a lot of classes,
+      # which otherwise creeps up and OOM-kills the box); smaller thread stacks
+      # (Suwayomi spawns many); SerialGC = lowest GC memory overhead.
+      JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true -Xmx256m -XX:MaxMetaspaceSize=192m -XX:+UseSerialGC -Xss512k -XX:+ExitOnOutOfMemoryError"
     expose:
       - "4567"
     volumes:
@@ -24,7 +27,7 @@ services:
     networks:
       - internal
     restart: unless-stopped
-    mem_limit: 512m
+    mem_limit: 448m
     healthcheck:
       # The Suwayomi image ships curl, not wget. Generous start_period +
       # retries because the JVM is slow to boot on 1 vCPU / 1 GB.
