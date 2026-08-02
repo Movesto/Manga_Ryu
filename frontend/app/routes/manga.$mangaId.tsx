@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLoaderData, Link, useFetcher, useNavigate, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/manga.$mangaId";
 import { data } from "react-router";
@@ -114,6 +114,57 @@ export default function MangaDetail() {
   const bookmarkFetcher = useFetcher<{ bookmarked: boolean }>();
   const navigate = useNavigate();
   const { csrf } = useRouteLoaderData("root") as { csrf: string };
+
+  // ── offline (in-app) downloads: save chapters to read with no connection ────
+  const [offline, setOffline] = useState<Record<number, "idle" | "saving" | "saved">>({});
+  const [offlinePct, setOfflinePct] = useState<Record<number, number>>({});
+
+  useEffect(() => {
+    // Mark which chapters are already saved offline.
+    import("../lib/downloads").then((dl) =>
+      dl.listDownloads().then((list) => {
+        const saved: Record<number, "saved"> = {};
+        for (const c of list) if (c.mangaId === String(manga.id)) saved[Number(c.id)] = "saved";
+        setOffline((s) => ({ ...saved, ...s }));
+      }),
+    );
+  }, [manga.id]);
+
+  async function toggleOffline(ch: any) {
+    const id = ch.id as number;
+    if (offline[id] === "saving") return;
+    const dl = await import("../lib/downloads");
+    if (offline[id] === "saved") {
+      await dl.deleteChapter(String(id));
+      setOffline((s) => ({ ...s, [id]: "idle" }));
+      return;
+    }
+    setOffline((s) => ({ ...s, [id]: "saving" }));
+    setOfflinePct((p) => ({ ...p, [id]: 0 }));
+    try {
+      // The manga page doesn't hold page URLs — fetch them like the reader does.
+      const res = await fetch(`/api/manga/${manga.id}/chapter/${id}`);
+      const data = await res.json();
+      const raw: string[] = Array.isArray(data?.pageList) ? data.pageList : Array.isArray(data) ? data : [];
+      const pages = raw.map((p) => (p.startsWith("http") ? p : `/media${p}`));
+      if (pages.length === 0) throw new Error("no pages");
+      await dl.downloadChapter(
+        {
+          id: String(id),
+          mangaId: String(manga.id),
+          mangaTitle: manga.title ?? "",
+          mangaThumb: manga.thumbnailUrl ? `/media${manga.thumbnailUrl}` : "",
+          chapterName: ch.name ?? "",
+          chapterNumber: ch.chapterNumber ?? 0,
+          pages,
+        },
+        (done, total) => setOfflinePct((p) => ({ ...p, [id]: total ? Math.round((done / total) * 100) : 0 })),
+      );
+      setOffline((s) => ({ ...s, [id]: "saved" }));
+    } catch {
+      setOffline((s) => ({ ...s, [id]: "idle" }));
+    }
+  }
 
   const sortedChapters = chapSort === "desc" ? chapters : [...chapters].reverse();
   const firstChapter   = chapters[chapters.length - 1];
@@ -509,6 +560,39 @@ export default function MangaDetail() {
                             </svg>
                           ) : (
                             <DownloadIcon size={14} />
+                          )}
+                        </button>
+
+                        {/* Offline (in-app) save — read with no connection */}
+                        <button
+                          onClick={() => toggleOffline(ch)}
+                          disabled={offline[ch.id] === "saving"}
+                          title={
+                            offline[ch.id] === "saving" ? "Saving…"
+                            : offline[ch.id] === "saved" ? "Saved offline — tap to remove"
+                            : "Save for offline reading"
+                          }
+                          className={`p-2 rounded-lg transition-colors ${
+                            offline[ch.id] === "saving" ? "text-orange-400 cursor-wait"
+                            : offline[ch.id] === "saved" ? "text-orange-400"
+                            : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800"
+                          }`}
+                        >
+                          {offline[ch.id] === "saving" ? (
+                            <span className="text-[10px] font-semibold tabular-nums w-[26px] inline-block text-center">
+                              {offlinePct[ch.id] ?? 0}%
+                            </span>
+                          ) : offline[ch.id] === "saved" ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="8 12 11 15 16 9" />
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
                           )}
                         </button>
                       </div>
