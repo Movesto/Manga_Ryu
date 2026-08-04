@@ -25,6 +25,9 @@ RUN .venv/bin/pip install --no-cache-dir --upgrade pip setuptools>=78.1.1 msgpac
 # Lean final image: no build tools, no pip, no root process.
 FROM python:3.12-slim AS runtime
 
+# Strip the vulnerable global packages baked into the base Python image
+RUN python -m pip uninstall -y pip setuptools wheel
+
 # Locked-down system account — no shell, no home directory, no login
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin appuser
 
