@@ -7,8 +7,8 @@ import { API, imgUrl } from "../lib/config";
 import { chNum, relativeTime } from "../lib/utils";
 import { BookmarkIcon, PlayIcon, ArrowLeftIcon, ChevronIcon, DownloadIcon } from "../components/icons";
 
-export function meta({ data }: Route.MetaArgs) {
-  const title = data?.manga?.title;
+export function meta({ loaderData }: Route.MetaArgs) {
+  const title = loaderData?.manga?.title;
   return [
     { title: title ? `${title} — Manga Ryu` : "Manga Ryu" },
   ];

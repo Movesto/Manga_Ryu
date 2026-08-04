@@ -13,7 +13,8 @@ RUN python -m venv /app/.venv
 ARG INSTALL_ML=true
 
 COPY requirements.txt requirements-ml.txt ./
-RUN .venv/bin/pip install --no-cache-dir --upgrade pip \
+
+RUN .venv/bin/pip install --no-cache-dir --upgrade pip setuptools>=78.1.1 msgpack>=1.2.1 \
  && .venv/bin/pip install --no-cache-dir -r requirements.txt \
  && if [ "$INSTALL_ML" = "true" ]; then \
       .venv/bin/pip install --no-cache-dir -r requirements-ml.txt; \
