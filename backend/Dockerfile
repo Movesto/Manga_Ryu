@@ -1,7 +1,7 @@
 # ── Stage 1: builder ──────────────────────────────────────────────────────────
 # Install all Python dependencies into an isolated venv.
 # Build tools (gcc, etc.) stay here and never reach the final image.
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 # Build the venv at its FINAL runtime path so console-script shebangs
 # (e.g. .venv/bin/uvicorn → #!/app/.venv/bin/python) stay valid after copy.
@@ -23,7 +23,7 @@ RUN .venv/bin/pip install --no-cache-dir --upgrade pip setuptools>=78.1.1 msgpac
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 # Lean final image: no build tools, no pip, no root process.
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Strip the vulnerable global packages baked into the base Python image
 RUN python -m pip uninstall -y pip setuptools wheel
