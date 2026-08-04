@@ -12,5 +12,8 @@ requests==2.33.1
 sentry-sdk[fastapi]==2.20.0
 slowapi==0.1.9
 uvicorn==0.46.0
+
+msgpack>=1.2.1
+setuptools>=78.1.1
 # ML tagger inference deps live in requirements-ml.txt (installed by the
 # Dockerfile; optional for local dev — the tagger degrades gracefully)
