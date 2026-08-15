@@ -190,7 +190,13 @@ jobs:
       - name: Run Trivy — collect SARIF
         uses: aquasecurity/trivy-action@v0.36.0
         env:
-          TRIVY_SBOM_SOURCES: ""  # Forces Trivy to ignore base image SBOMs
+          # Never treat an SBOM file found *inside* the image as a package
+          # source. Wheels ship build-time CycloneDX receipts under
+          # `<pkg>.dist-info/sboms/`; Trivy parses them as a third-party SBOM
+          # and reports their frozen component versions as image CVEs. The
+          # Dockerfile deletes them, this is the belt-and-braces for anything a
+          # future base image drops elsewhere.
+          TRIVY_SKIP_FILES: "**/*.cdx.json,**/*.spdx.json,**/*.cyclonedx.json,**/dist-info/sboms/**"
         with:
           image-ref: manga-${{ matrix.service }}:scan
           format: sarif
@@ -216,10 +222,5 @@ jobs:
           severity: CRITICAL,HIGH
         env:
           TRIVY_SKIP_DB_UPDATE: true   # DB already fetched by the first Trivy step
-          TRIVY_SBOM_SOURCES: ""
+          TRIVY_SKIP_FILES: "**/*.cdx.json,**/*.spdx.json,**/*.cyclonedx.json,**/dist-info/sboms/**"
 
-  # Deployment is intentionally NOT automated from CI. The stack is built and
-  # run on the VM itself (no registry, no SSH-from-GitHub) — see
-  # infrastructure/oracle-setup.sh and ORACLE_DEPLOY.md. To ship new code:
-  #   ssh <vm> 'cd ~/manga-ryu && git pull && bash infrastructure/oracle-setup.sh'
-  # This workflow's job is to gate that: scans must be green before you deploy.

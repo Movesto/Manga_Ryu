@@ -36,6 +36,20 @@ WORKDIR /app
 # Only the compiled venv comes from the builder — nothing else
 COPY --from=builder /app/.venv /app/.venv
 
+# Drop the detached CycloneDX/SPDX receipts that modern wheels ship inside
+# `<pkg>.dist-info/sboms/`. They describe the BUILD environment of the wheel,
+# not what's installed here, so Trivy parses them as a third-party SBOM and
+# reports their frozen component versions (e.g. setuptools 70.3.0,
+# msgpack 1.1.2) as image vulnerabilities — while the packages actually
+# installed alongside them are current. They're documentation; nothing imports
+# them at runtime.
+RUN find / -xdev \
+      \( -path '*.dist-info/sboms/*' \
+         -o -name '*.cdx.json' \
+         -o -name '*.spdx.json' \
+         -o -name '*.cyclonedx.json' \) \
+      -type f -delete 2>/dev/null || true
+
 # Copy application source with correct ownership in one layer
 COPY --chown=appuser:appuser . .
 
